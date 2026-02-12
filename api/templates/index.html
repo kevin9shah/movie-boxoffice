@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Analytics Dashboard - Spark & AI</title>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outlet:wght@300;400;600&family=Inter:wght@400;600&display=swap"
+        rel="stylesheet">
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <nav class="sidebar">
+            <h2>PredictBox</h2>
+            <ul>
+                <li><a href="#overview">Overview</a></li>
+                <li><a href="#spark-data">Spark Data</a></li>
+                <li><a href="#validation">Validation</a></li>
+                <li><a href="#predictions">Predictions</a></li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <header>
+                <h1>Movie Analytics Dashboard</h1>
+            </header>
+
+            <section id="overview" class="stats-grid">
+                <div class="card stat-card">
+                    <h3>Total Movies</h3>
+                    <p id="total-movies">Loading...</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>Avg Revenue</h3>
+                    <p id="avg-revenue">Loading...</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>Avg Sentiment</h3>
+                    <p id="avg-sentiment">Loading...</p>
+                </div>
+            </section>
+
+            <section id="spark-data" class="charts-grid">
+                <div class="card wide">
+                    <h3>Feature Importance</h3>
+                    <div id="feature-importance-chart"></div>
+                </div>
+            </section>
+
+            <section id="validation">
+                <div class="card wide">
+                    <h3>Validation Report (Top 20)</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Actual</th>
+                                <th>Predicted</th>
+                                <th>Error %</th>
+                            </tr>
+                        </thead>
+                        <tbody id="validation-table-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="predictions" class="charts-grid">
+                <div class="card">
+                    <h3>Data Sample</h3>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Budget</th>
+                                <th>Revenue</th>
+                                <th>Sentiment</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-sample-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card">
+                    <h3>Sentiment Dist.</h3>
+                    <div id="sentiment-chart"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="/static/js/dashboard.js"></script>
+</body>
+
+</html>

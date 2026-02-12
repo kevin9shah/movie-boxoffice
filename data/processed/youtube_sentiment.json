@@ -1,0 +1,302 @@
+[
+    {
+        "movie_id": 840464,
+        "youtube_sentiment": 0.165096,
+        "sentiment_volatility": 0.45559488268255444
+    },
+    {
+        "movie_id": 1368166,
+        "youtube_sentiment": 0.367524,
+        "sentiment_volatility": 0.4048251739369246
+    },
+    {
+        "movie_id": 1168190,
+        "youtube_sentiment": 0.28386,
+        "sentiment_volatility": 0.41900098241568134
+    },
+    {
+        "movie_id": 1315303,
+        "youtube_sentiment": 0.08796,
+        "sentiment_volatility": 0.472794674768864
+    },
+    {
+        "movie_id": 1084242,
+        "youtube_sentiment": 0.0,
+        "sentiment_volatility": 0.0
+    },
+    {
+        "movie_id": 1419406,
+        "youtube_sentiment": 0.42501400000000006,
+        "sentiment_volatility": 0.43447175151121675
+    },
+    {
+        "movie_id": 1601243,
+        "youtube_sentiment": 0.19352799999999998,
+        "sentiment_volatility": 0.4400341151153011
+    },
+    {
+        "movie_id": 1317288,
+        "youtube_sentiment": 0.20996199999999998,
+        "sentiment_volatility": 0.41857401066487826
+    },
+    {
+        "movie_id": 1242898,
+        "youtube_sentiment": 0.228104,
+        "sentiment_volatility": 0.4793183339804518
+    },
+    {
+        "movie_id": 1310568,
+        "youtube_sentiment": 0.10001818181818183,
+        "sentiment_volatility": 0.47275580142827534
+    },
+    {
+        "movie_id": 83533,
+        "youtube_sentiment": 0.16675,
+        "sentiment_volatility": 0.4731424211738847
+    },
+    {
+        "movie_id": 1271895,
+        "youtube_sentiment": 0.06514,
+        "sentiment_volatility": 0.40048943384400254
+    },
+    {
+        "movie_id": 1584215,
+        "youtube_sentiment": 0.2767,
+        "sentiment_volatility": 0.4586086767248816
+    },
+    {
+        "movie_id": 755898,
+        "youtube_sentiment": 0.21990200000000001,
+        "sentiment_volatility": 0.5267176847075419
+    },
+    {
+        "movie_id": 1426964,
+        "youtube_sentiment": -0.10606666666666666,
+        "sentiment_volatility": 0.7239962039495327
+    },
+    {
+        "movie_id": 858024,
+        "youtube_sentiment": 0.294452,
+        "sentiment_volatility": 0.6120110220562758
+    },
+    {
+        "movie_id": 1306368,
+        "youtube_sentiment": 0.239814,
+        "sentiment_volatility": 0.43042714285951356
+    },
+    {
+        "movie_id": 1234731,
+        "youtube_sentiment": 0.300748,
+        "sentiment_volatility": 0.4251247755563497
+    },
+    {
+        "movie_id": 1043197,
+        "youtube_sentiment": 0.367718,
+        "sentiment_volatility": 0.4140707672386843
+    },
+    {
+        "movie_id": 1167307,
+        "youtube_sentiment": 0.398534,
+        "sentiment_volatility": 0.46367764779564924
+    },
+    {
+        "movie_id": 1311031,
+        "youtube_sentiment": 0.072354,
+        "sentiment_volatility": 0.5186453250024903
+    },
+    {
+        "movie_id": 1290821,
+        "youtube_sentiment": 0.316662,
+        "sentiment_volatility": 0.409133782765491
+    },
+    {
+        "movie_id": 1198984,
+        "youtube_sentiment": 0.155886,
+        "sentiment_volatility": 0.5752676260982663
+    },
+    {
+        "movie_id": 1198994,
+        "youtube_sentiment": 0.289692,
+        "sentiment_volatility": 0.41628162898279747
+    },
+    {
+        "movie_id": 1316092,
+        "youtube_sentiment": 0.115724,
+        "sentiment_volatility": 0.5291436819493726
+    },
+    {
+        "movie_id": 1528660,
+        "youtube_sentiment": -0.0014977272727272777,
+        "sentiment_volatility": 0.4808162238917332
+    },
+    {
+        "movie_id": 1242501,
+        "youtube_sentiment": 0.038166000000000005,
+        "sentiment_volatility": 0.3852264728066081
+    },
+    {
+        "movie_id": 991494,
+        "youtube_sentiment": 0.0,
+        "sentiment_volatility": 0.0
+    },
+    {
+        "movie_id": 1212742,
+        "youtube_sentiment": 0.36174799999999996,
+        "sentiment_volatility": 0.4748796815349062
+    },
+    {
+        "movie_id": 1194388,
+        "youtube_sentiment": 0.33171,
+        "sentiment_volatility": 0.4346437688686294
+    },
+    {
+        "movie_id": 425274,
+        "youtube_sentiment": 0.20104400000000003,
+        "sentiment_volatility": 0.46092345203594787
+    },
+    {
+        "movie_id": 24428,
+        "youtube_sentiment": 0.219968,
+        "sentiment_volatility": 0.3817632220769992
+    },
+    {
+        "movie_id": 1373198,
+        "youtube_sentiment": 0.208402,
+        "sentiment_volatility": 0.47845580671103805
+    },
+    {
+        "movie_id": 1454741,
+        "youtube_sentiment": 0.2339,
+        "sentiment_volatility": 0.6483705075032331
+    },
+    {
+        "movie_id": 1466115,
+        "youtube_sentiment": -0.010983999999999999,
+        "sentiment_volatility": 0.5897577511528763
+    },
+    {
+        "movie_id": 1252037,
+        "youtube_sentiment": 0.11024800000000001,
+        "sentiment_volatility": 0.4935824217258296
+    },
+    {
+        "movie_id": 7451,
+        "youtube_sentiment": 0.26537,
+        "sentiment_volatility": 0.4296116904738938
+    },
+    {
+        "movie_id": 1548113,
+        "youtube_sentiment": 0.298758,
+        "sentiment_volatility": 0.4033218100793885
+    },
+    {
+        "movie_id": 1408208,
+        "youtube_sentiment": 0.39309,
+        "sentiment_volatility": 0.37828749689372826
+    },
+    {
+        "movie_id": 1246049,
+        "youtube_sentiment": 0.371188,
+        "sentiment_volatility": 0.4132119037540927
+    },
+    {
+        "movie_id": 1590097,
+        "youtube_sentiment": -0.052533333333333335,
+        "sentiment_volatility": 0.4925377413626967
+    },
+    {
+        "movie_id": 1370814,
+        "youtube_sentiment": -0.065996,
+        "sentiment_volatility": 0.43935085183038125
+    },
+    {
+        "movie_id": 157336,
+        "youtube_sentiment": 0.30842200000000003,
+        "sentiment_volatility": 0.42390962036832375
+    },
+    {
+        "movie_id": 1297842,
+        "youtube_sentiment": 0.153238,
+        "sentiment_volatility": 0.44340647537455025
+    },
+    {
+        "movie_id": 1054867,
+        "youtube_sentiment": 0.364012,
+        "sentiment_volatility": 0.43238889696708
+    },
+    {
+        "movie_id": 628847,
+        "youtube_sentiment": 0.148596,
+        "sentiment_volatility": 0.4342356794297262
+    },
+    {
+        "movie_id": 803796,
+        "youtube_sentiment": 0.402032,
+        "sentiment_volatility": 0.3884893261160755
+    },
+    {
+        "movie_id": 1326878,
+        "youtube_sentiment": 0.16824999999999998,
+        "sentiment_volatility": 0.4775473696986745
+    },
+    {
+        "movie_id": 575265,
+        "youtube_sentiment": 0.38437600000000005,
+        "sentiment_volatility": 0.4412656294555191
+    },
+    {
+        "movie_id": 1246049,
+        "youtube_sentiment": 0.371188,
+        "sentiment_volatility": 0.4132119037540927
+    },
+    {
+        "movie_id": 19995,
+        "youtube_sentiment": 0.16675,
+        "sentiment_volatility": 0.4731424211738847
+    },
+    {
+        "movie_id": 1266990,
+        "youtube_sentiment": 0.1697,
+        "sentiment_volatility": NaN
+    },
+    {
+        "movie_id": 1116201,
+        "youtube_sentiment": 0.468868,
+        "sentiment_volatility": 0.3840750497663981
+    },
+    {
+        "movie_id": 1062722,
+        "youtube_sentiment": 0.402286,
+        "sentiment_volatility": 0.5073147165584049
+    },
+    {
+        "movie_id": 269149,
+        "youtube_sentiment": 0.0,
+        "sentiment_volatility": 0.0
+    },
+    {
+        "movie_id": 1171145,
+        "youtube_sentiment": 0.46582999999999997,
+        "sentiment_volatility": 0.34069093675610906
+    },
+    {
+        "movie_id": 1272837,
+        "youtube_sentiment": 0.0,
+        "sentiment_volatility": 0.0
+    },
+    {
+        "movie_id": 1412598,
+        "youtube_sentiment": 0.0,
+        "sentiment_volatility": 0.0
+    },
+    {
+        "movie_id": 1196067,
+        "youtube_sentiment": -0.04749574468085106,
+        "sentiment_volatility": 0.48564661823962657
+    },
+    {
+        "movie_id": 982843,
+        "youtube_sentiment": 0.0,
+        "sentiment_volatility": 0.0
+    }
+]
