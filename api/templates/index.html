@@ -17,23 +17,142 @@
 <body>
     <div class="dashboard-container">
         <nav class="sidebar">
-            <h2>PredictBox</h2>
+            <div class="brand">
+                <h2>PredictBox</h2>
+                <p>AI-Powered Analytics</p>
+            </div>
             <ul>
+                <li><a href="#simulator" class="active">Simulator</a></li>
                 <li><a href="#overview">Overview</a></li>
-                <li><a href="#spark-data">Spark Data</a></li>
+                <li><a href="#model-scores">Model Scores</a></li>
+                <li><a href="#spark-data">Feature Impact</a></li>
                 <li><a href="#validation">Validation</a></li>
-                <li><a href="#predictions">Predictions</a></li>
             </ul>
         </nav>
 
         <main class="main-content">
             <header>
-                <h1>Movie Analytics Dashboard</h1>
+                <h1>Movie Box Office Prediction & Analytics</h1>
             </header>
+
+            <!-- Prediction Simulator Section -->
+            <section id="simulator" class="simulator-grid">
+                <div class="card form-card">
+                    <h3>Predict Outcome</h3>
+                    <form id="prediction-form">
+                        <div class="form-group">
+                            <label>Movie Title</label>
+                            <input type="text" id="title" required placeholder="e.g. Inception 2">
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Budget ($)</label>
+                                <input type="number" id="budget" required value="50000000">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Overview (Description)</label>
+                            <textarea id="overview" rows="4" placeholder="Plot summary..."></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Genre</label>
+                                <select id="primary_genre">
+                                    <option value="Action">Action</option>
+                                    <option value="Adventure">Adventure</option>
+                                    <option value="Comedy">Comedy</option>
+                                    <option value="Drama">Drama</option>
+                                    <option value="Horror">Horror</option>
+                                    <option value="Science Fiction">Science Fiction</option>
+                                    <option value="Thriller">Thriller</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Release Month</label>
+                                <select id="release_month">
+                                    <option value="1">January</option>
+                                    <option value="6">June</option>
+                                    <option value="12">December</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Cast & Crew Stats -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Avg Cast Pop. (0-100)</label>
+                                <input type="number" id="avg_cast_popularity" value="30" step="0.1">
+                            </div>
+                            <div class="form-group">
+                                <label>Director Pop. (0-50)</label>
+                                <input type="number" id="avg_director_popularity" value="10" step="0.1">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Cast Size</label>
+                                <input type="number" id="num_cast_members" value="10">
+                            </div>
+                            <div class="form-group">
+                                <label>Composers</label>
+                                <input type="number" id="num_composers" value="1">
+                            </div>
+                        </div>
+
+                        <!-- Advanced/Social Stats (Simplified for demo) -->
+                        <div class="form-group">
+                            <label>Projected Sentiment (0-15)</label>
+                            <input type="range" id="youtube_sentiment" min="0" max="15" step="0.1" value="7">
+                            <span id="sentiment-val">7.0</span>
+                            <small id="sentiment-helper"
+                                style="display:block; margin-top:5px; color:#94a3b8; font-size: 0.85rem;">Neutral
+                                Impact</small>
+                        </div>
+
+                        <button type="submit" class="btn-predict">Predict Revenue</button>
+                    </form>
+                </div>
+
+                <div class="card result-card" id="prediction-result" style="display:none;">
+                    <h3>Prediction Results</h3>
+                    <div class="result-metrics">
+                        <div class="metric">
+                            <span class="label">Predicted Revenue</span>
+                            <span class="value success" id="pred-revenue">$0</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Success Class</span>
+                            <span class="value" id="pred-class">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Confidence</span>
+                            <span class="value" id="pred-conf">0%</span>
+                        </div>
+                    </div>
+                    <!-- NLP Analysis Section -->
+                    <div class="nlp-results" id="nlp-results"
+                        style="display:none; margin-top: 15px; border-top: 1px solid #334155; padding-top: 10px;">
+                        <h4>Description Analysis (NLP)</h4>
+                        <div class="result-metrics">
+                            <div class="metric">
+                                <span class="label">Sentiment</span>
+                                <span class="value" id="nlp-sentiment">-</span>
+                            </div>
+                            <div class="metric" style="flex: 2;">
+                                <span class="label">Keywords</span>
+                                <span class="value small" id="nlp-keywords">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <section id="overview" class="stats-grid">
                 <div class="card stat-card">
-                    <h3>Total Movies</h3>
+                    <h3>Total Movies Analyzed</h3>
                     <p id="total-movies">Loading...</p>
                 </div>
                 <div class="card stat-card">
@@ -46,54 +165,72 @@
                 </div>
             </section>
 
+            <!-- Model Scores Section -->
+            <section id="model-scores" class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+                <div class="card stat-card">
+                    <h3>R² Score</h3>
+                    <p id="r2-score" style="color: #22c55e;">Loading...</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>MAE</h3>
+                    <p id="mae-score">Loading...</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>MAPE (Overall)</h3>
+                    <p id="mape-score">Loading...</p>
+                </div>
+                <div class="card stat-card">
+                    <h3>MAPE (Top 50)</h3>
+                    <p id="top50-mape">Loading...</p>
+                </div>
+                <div class="card wide" style="grid-column: 1 / -1;">
+                    <h3>Model Information</h3>
+                    <div class="result-metrics">
+                        <div class="metric">
+                            <span class="label">Model Type</span>
+                            <span class="value small" id="model-type">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">Total Features</span>
+                            <span class="value" id="total-features">-</span>
+                        </div>
+                        <div class="metric">
+                            <span class="label">RMSE</span>
+                            <span class="value" id="rmse-score">-</span>
+                        </div>
+                    </div>
+                    <div id="feature-groups" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 10px;"></div>
+                </div>
+            </section>
+
             <section id="spark-data" class="charts-grid">
                 <div class="card wide">
-                    <h3>Feature Importance</h3>
+                    <h3>Feature Importance (Impact on Revenue)</h3>
                     <div id="feature-importance-chart"></div>
                 </div>
             </section>
 
             <section id="validation">
                 <div class="card wide">
-                    <h3>Validation Report (Top 20)</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Title</th>
-                                <th>Actual</th>
-                                <th>Predicted</th>
-                                <th>Error %</th>
-                            </tr>
-                        </thead>
-                        <tbody id="validation-table-body">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
+                    <h3>Model Validation (Top 100 of <span id="validation-total">0</span> Movies)</h3>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Actual Revenue</th>
+                                    <th>Predicted Revenue</th>
+                                    <th>Error %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="validation-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
-            <section id="predictions" class="charts-grid">
-                <div class="card">
-                    <h3>Data Sample</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Title</th>
-                                <th>Budget</th>
-                                <th>Revenue</th>
-                                <th>Sentiment</th>
-                            </tr>
-                        </thead>
-                        <tbody id="data-sample-body">
-                            <!-- Populated by JS -->
-                        </tbody>
-                    </table>
-                </div>
-                <div class="card">
-                    <h3>Sentiment Dist.</h3>
-                    <div id="sentiment-chart"></div>
-                </div>
-            </section>
         </main>
     </div>
     <script src="/static/js/dashboard.js"></script>

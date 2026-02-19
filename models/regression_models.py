@@ -38,20 +38,36 @@ class RegressionModel:
             
         df = pd.read_csv(dataset_path)
         
-        # Select Features
+        # Select Features (including new cast, crew, Wikipedia, and DESCRIPTION features)
         features = [
-            "budget", "runtime", "popularity", "vote_average", "vote_count",
+            "budget", "popularity", "vote_average", "vote_count",
             "trailer_views", "trailer_likes", "trailer_comments",
             "trailer_popularity_index", "interaction_rate", "engagement_velocity",
             "youtube_sentiment", "sentiment_volatility",
             "trend_momentum",
+            # Cast features
+            "num_cast_members", "avg_cast_popularity", "max_cast_popularity", "star_power_score",
+            # Director features
+            "num_directors", "avg_director_popularity", "max_director_popularity", "director_experience_score",
+            # Composer features
+            "num_composers", "avg_composer_popularity", "max_composer_popularity", "music_prestige_score",
+            # NEW: Engineered features
+            "is_franchise", "is_sequel", "budget_tier", "genre_avg_revenue",
+            "description_length", "hype_score", "budget_popularity_ratio", "vote_power",
+            # Text feature
+            "overview",
+            # Categorical features
             "primary_genre", "release_month"
         ]
         
         # Ensure features exist
         available_features = [f for f in features if f in df.columns]
+        logger.info(f"Available features: {available_features}")
         
-        X = df[available_features]
+        X = df[available_features].copy()
+        if 'overview' in X.columns:
+            X['overview'] = X['overview'].fillna('')
+            
         y = df["revenue"]
         
         return X, y
@@ -61,19 +77,27 @@ class RegressionModel:
         if X is None:
             return
 
-        # Preprocessing: OneHotEncode categorical features
+        # Preprocessing: OneHotEncode categorical features, TF-IDF for text
         # Identify categorical columns
         categorical_features = ['primary_genre', 'release_month']
-        numeric_features = [col for col in X.columns if col not in categorical_features]
+        text_features = ['overview']
+        # numeric is everything else
+        numeric_features = [col for col in X.columns if col not in categorical_features and col not in text_features]
         
         from sklearn.compose import ColumnTransformer
         from sklearn.preprocessing import OneHotEncoder, StandardScaler
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.impute import SimpleImputer
         from sklearn.pipeline import Pipeline
         
         preprocessor = ColumnTransformer(
             transformers=[
-                ('num', StandardScaler(), numeric_features),
-                ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features)
+                ('num', Pipeline(steps=[
+                    ('imputer', SimpleImputer(strategy='mean')),
+                    ('scaler', StandardScaler())
+                ]), numeric_features),
+                ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_features),
+                ('txt', TfidfVectorizer(max_features=100, stop_words='english'), 'overview')
             ])
 
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)

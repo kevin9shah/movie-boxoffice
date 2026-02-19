@@ -7,6 +7,7 @@ import logging
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
+from .cast_crew_features import CastCrewFeatures
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -69,7 +70,26 @@ def integrate_features():
                           on="title_lower", how="left")
             df.drop(columns=['title_lower'], inplace=True)
 
-    # 4. Fill NaNs
+    # 4. ADD NEW: Cast, Crew, and Wikipedia Box Office Features
+    logger.info("Adding Cast, Crew, and Wikipedia Box Office Features...")
+    cast_crew_gen = CastCrewFeatures()
+    df = cast_crew_gen.generate_all_features(df)
+
+    # 4b. ADD NEW: Movie Description (Overview)
+    logger.info("Adding Movie Descriptions (Overview)...")
+    tmdb_path = os.path.join(config.RAW_DATA_DIR, "tmdb_movies.json")
+    if os.path.exists(tmdb_path):
+        with open(tmdb_path, 'r') as f:
+            tmdb_data = json.load(f)
+        
+        # Create a mapping of id -> overview
+        overview_map = {m['id']: m.get('overview', '') for m in tmdb_data}
+        df['overview'] = df['movie_id'].map(overview_map).fillna('')
+    else:
+        logger.warning("TMDB data not found, overview will be empty.")
+        df['overview'] = ""
+    
+    # 5. Fill NaNs
     # Handle numeric columns
     numeric_cols = df.select_dtypes(include=['number']).columns
     df[numeric_cols] = df[numeric_cols].fillna(0)
@@ -82,7 +102,7 @@ def integrate_features():
     if 'release_month' in df.columns:
         df['release_month'] = df['release_month'].astype(int)
     
-    # 5. Create Target Variables (if not present or for classification)
+    # 6. Create Target Variables (if not present or for classification)
     # Revenue is the target, 'revenue' column exists from TMDB
     # Classification: Hit > 3x Budget, Average > 1x Budget, Flop < 1x Budget
     def classify_success(row):
@@ -98,8 +118,6 @@ def integrate_features():
 
     df['success_class'] = df.apply(classify_success, axis=1)
 
-    df['success_class'] = df.apply(classify_success, axis=1)
-
     # Deduplicate based on movie_id
     logger.info(f"Shape before deduplication: {df.shape}")
     df = df.drop_duplicates(subset=['movie_id'], keep='first')
@@ -109,6 +127,7 @@ def integrate_features():
     output_path = os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv")
     df.to_csv(output_path, index=False)
     logger.info(f"Final dataset saved to {output_path}. Shape: {df.shape}")
+    logger.info(f"Columns in final dataset: {list(df.columns)}")
 
 if __name__ == "__main__":
     integrate_features()

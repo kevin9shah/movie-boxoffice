@@ -10,6 +10,7 @@ import config
 from data_collection.tmdb_collector import TMDBCollector
 from data_collection.youtube_collector import YouTubeCollector
 from data_collection.trends_collector import TrendsCollector
+from data_collection.wikipedia_collector import WikipediaBoxOfficeCollector
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 def main():
     logger.info("Starting Main Data Collection Pipeline...")
 
-    # 1. Fetch Movies from TMDB
+    # 1. Fetch Movies from TMDB (includes cast/crew extraction)
+    logger.info("Collecting TMDB data (movies, cast, crew)...")
     tmdb = TMDBCollector()
     # In a real run, you might want more pages or a specific logic.
     # Fetch 5 pages (~100 movies) as requested.
@@ -36,15 +38,22 @@ def main():
     # Simplify movie list for other collectors (id and title)
     movie_list = [{"id": m.get("id"), "title": m.get("title")} for m in movies]
     
-    # 2. Fetch YouTube Data
+    # 2. Fetch Wikipedia Box Office Data (NEW)
+    logger.info("Collecting Wikipedia box office data...")
+    wikipedia = WikipediaBoxOfficeCollector()
+    wikipedia.run(movie_data_file="tmdb_movies.json")
+    
+    # 3. Fetch YouTube Data
+    logger.info("Collecting YouTube trailer data...")
     youtube = YouTubeCollector()
     youtube.run(movie_list)
 
-    # 3. Fetch Google Trends Data
+    # 4. Fetch Google Trends Data
+    logger.info("Collecting Google Trends data...")
     trends = TrendsCollector()
     trends.run(movie_list)
 
-    # 4. Fetch Google Search Data (for sentiment augmentation)
+    # 5. Fetch Google Search Data (for sentiment augmentation)
     # google_search = GoogleSearchCollector()
     # google_search.run(movie_list) # Commented out by default to save time/quota, enable if needed.
     

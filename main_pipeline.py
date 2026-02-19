@@ -29,7 +29,7 @@ def run_pipeline(skip_collection=False):
 
     # 1. Data Collection
     if not skip_collection:
-        logger.info("\n[STEP 1] Data Collection")
+        logger.info("\n[STEP 1] Data Collection (TMDB, YouTube, Trends, Wikipedia)")
         try:
             run_collection()
         except Exception as e:
