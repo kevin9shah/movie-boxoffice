@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>All Movies — PredictBox</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body {
+            background: var(--bg-body);
+        }
+
+        .movies-page {
+            min-height: 100vh;
+            padding: 2rem 3rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .movies-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            padding-bottom: 1.25rem;
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .movies-header-left h1 {
+            font-size: 1.75rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .movies-header-left p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .back-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: color 0.2s;
+        }
+
+        .back-link:hover {
+            color: var(--text-primary);
+        }
+
+        .controls-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .search-wrapper {
+            position: relative;
+            flex: 1;
+            min-width: 250px;
+            max-width: 500px;
+        }
+
+        .search-wrapper svg {
+            position: absolute;
+            left: 0.75rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            pointer-events: none;
+        }
+
+        #movie-search {
+            width: 100%;
+            padding: 0.65rem 0.75rem 0.65rem 2.5rem;
+            border-radius: 6px;
+            font-size: 0.95rem;
+        }
+
+        .sort-select {
+            padding: 0.65rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+
+        .movies-count {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-left: auto;
+        }
+
+        .movies-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .movie-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 1.25rem;
+            transition: border-color 0.2s, transform 0.2s;
+            position: relative;
+        }
+
+        .movie-card:hover {
+            border-color: #2563eb;
+            transform: translateY(-2px);
+        }
+
+        .movie-card-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 0.4rem;
+            color: #0f172a;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .genre-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 500;
+            background: #2563eb22;
+            color: #2563eb;
+            border: 1px solid #2563eb44;
+            margin-bottom: 0.9rem;
+        }
+
+        .movie-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .movie-stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.82rem;
+        }
+
+        .movie-stat-row .stat-label {
+            color: var(--text-secondary);
+        }
+
+        .movie-stat-row .stat-val {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .movie-stat-row .stat-val.revenue {
+            color: #22c55e;
+        }
+
+        .movie-stat-row .stat-val.sentiment {
+            color: #f59e0b;
+        }
+
+        .no-results {
+            grid-column: 1 / -1;
+            color: #64748b;
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-secondary);
+        }
+
+        .load-more-wrapper {
+            text-align: center;
+            margin-top: 2.5rem;
+        }
+
+        .btn-load-more {
+            padding: 0.75rem 2.5rem;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            color: #0f172a;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .btn-load-more:hover {
+            border-color: #2563eb;
+            background: #f1f3f5;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #e2e8f0;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .franchise-tag {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            font-size: 0.68rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 4px;
+            background: #fef9c3;
+            color: #b45309;
+            border: 1px solid #fcd34d;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="movies-page">
+        <div class="movies-header">
+            <div class="movies-header-left">
+                <h1>All Movies</h1>
+                <p id="header-count">Loading dataset...</p>
+            </div>
+            <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+        </div>
+
+        <div class="controls-bar">
+            <div class="search-wrapper">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <circle cx="11" cy="11" r="8" />
+                    <path d="m21 21-4.35-4.35" />
+                </svg>
+                <input type="text" id="movie-search" placeholder="Search by title or genre..." autocomplete="off">
+            </div>
+            <select class="sort-select" id="sort-select">
+                <option value="revenue">Sort by Revenue</option>
+                <option value="budget">Sort by Budget</option>
+                <option value="sentiment">Sort by Sentiment</option>
+                <option value="popularity">Sort by Popularity</option>
+                <option value="vote">Sort by Vote Avg</option>
+            </select>
+            <span class="movies-count" id="movies-count">—</span>
+        </div>
+
+        <div class="movies-grid" id="movies-grid">
+            <div class="no-results"><span class="spinner"></span> Loading movies...</div>
+        </div>
+
+        <div class="load-more-wrapper" id="load-more-wrapper" style="display:none;">
+            <button class="btn-load-more" id="load-more-btn">Load More</button>
+        </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const LIMIT = 50;
+        let currentQuery = '';
+        let currentSort = 'revenue';
+        let totalMovies = 0;
+        let isLoading = false;
+
+        function getGenreColor(genre) {
+            const colors = {
+                'Action': '#ef4444', 'Adventure': '#f97316', 'Comedy': '#eab308',
+                'Drama': '#22c55e', 'Horror': '#a855f7', 'Science Fiction': '#3b82f6',
+                'Thriller': '#ec4899', 'Animation': '#06b6d4', 'Romance': '#f43f5e',
+                'Crime': '#64748b', 'Fantasy': '#8b5cf6', 'Mystery': '#6366f1'
+            };
+            return colors[genre] || '#64748b';
+        }
+
+        function formatMoney(val) {
+            if (!val || val === 0) return '—';
+            if (val >= 1e9) return '$' + (val / 1e9).toFixed(2) + 'B';
+            if (val >= 1e6) return '$' + (val / 1e6).toFixed(1) + 'M';
+            return '$' + Math.round(val).toLocaleString();
+        }
+
+        function renderMovies(movies, append = false) {
+            const grid = document.getElementById('movies-grid');
+            if (!append) grid.innerHTML = '';
+
+            if (movies.length === 0 && !append) {
+                grid.innerHTML = '<div class="no-results">No movies found. Try a different search.</div>';
+                return;
+            }
+
+            movies.forEach(m => {
+                const color = getGenreColor(m.primary_genre);
+                const card = document.createElement('div');
+                card.className = 'movie-card';
+                card.innerHTML = `
+                    ${m.is_franchise ? '<span class="franchise-tag">Franchise</span>' : ''}
+                    <div class="movie-card-title">${m.title || 'Unknown'}</div>
+                    <span class="genre-badge" style="background:${color}22;color:${color};border-color:${color}44">${m.primary_genre || 'N/A'}</span>
+                    <div class="movie-stats">
+                        <div class="movie-stat-row">
+                            <span class="stat-label">Revenue</span>
+                            <span class="stat-val revenue">${formatMoney(m.revenue)}</span>
+                        </div>
+                        <div class="movie-stat-row">
+                            <span class="stat-label">Budget</span>
+                            <span class="stat-val">${formatMoney(m.budget)}</span>
+                        </div>
+                        <div class="movie-stat-row">
+                            <span class="stat-label">Sentiment</span>
+                            <span class="stat-val sentiment">${m.youtube_sentiment ? m.youtube_sentiment.toFixed(2) : '—'}</span>
+                        </div>
+                        <div class="movie-stat-row">
+                            <span class="stat-label">Vote Avg</span>
+                            <span class="stat-val">${m.vote_average ? m.vote_average.toFixed(1) : '—'} ★</span>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        async function loadMovies(append = false) {
+            if (isLoading) return;
+            isLoading = true;
+
+            const page = append ? currentPage : 1;
+            const url = `/api/movies?q=${encodeURIComponent(currentQuery)}&sort=${currentSort}&page=${page}&limit=${LIMIT}`;
+
+            try {
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.error) { console.error(data.error); return; }
+
+                totalMovies = data.total;
+                document.getElementById('header-count').textContent = `${totalMovies.toLocaleString()} movies in dataset`;
+                document.getElementById('movies-count').textContent = `Showing ${Math.min(data.page * LIMIT, totalMovies)} of ${totalMovies.toLocaleString()} movies`;
+
+                renderMovies(data.movies, append);
+
+                const loadMoreWrapper = document.getElementById('load-more-wrapper');
+                const loadedSoFar = data.page * LIMIT;
+                if (loadedSoFar < totalMovies) {
+                    loadMoreWrapper.style.display = 'block';
+                    currentPage = data.page + 1;
+                } else {
+                    loadMoreWrapper.style.display = 'none';
+                }
+            } catch (e) {
+                console.error('Error loading movies:', e);
+            } finally {
+                isLoading = false;
+            }
+        }
+
+        // Debounced search
+        let searchTimer;
+        document.getElementById('movie-search').addEventListener('input', (e) => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                currentQuery = e.target.value.trim();
+                currentPage = 1;
+                loadMovies(false);
+            }, 300);
+        });
+
+        document.getElementById('sort-select').addEventListener('change', (e) => {
+            currentSort = e.target.value;
+            currentPage = 1;
+            loadMovies(false);
+        });
+
+        document.getElementById('load-more-btn').addEventListener('click', () => {
+            loadMovies(true);
+        });
+
+        // Initial load
+        loadMovies(false);
+    </script>
+</body>
+
+</html>

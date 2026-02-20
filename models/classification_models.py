@@ -40,19 +40,20 @@ class ClassificationModel:
         
         # Select Features (same as regression)
         features = [
-            "budget", "runtime", "popularity", "vote_average", "vote_count",
+            "budget", "popularity", "vote_average", "vote_count",
             "trailer_views", "trailer_likes", "trailer_comments",
             "trailer_popularity_index", "interaction_rate", "engagement_velocity",
             "youtube_sentiment", "sentiment_volatility",
             "trend_momentum",
-            # NEW: Cast features
+            # Cast features
             "num_cast_members", "avg_cast_popularity", "max_cast_popularity", "star_power_score",
-            # NEW: Director features
+            # Director features
             "num_directors", "avg_director_popularity", "max_director_popularity", "director_experience_score",
-            # NEW: Composer features
+            # Composer features
             "num_composers", "avg_composer_popularity", "max_composer_popularity", "music_prestige_score",
-            # NEW: Wikipedia box office features
-            "wikipedia_worldwide_box_office", "wikipedia_budget",
+            # Engineered features
+            "is_franchise", "is_sequel", "budget_tier", "genre_avg_revenue",
+            "description_length", "hype_score", "budget_popularity_ratio", "vote_power",
             # Text feature
             "overview",
             # Categorical features

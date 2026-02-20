@@ -43,7 +43,7 @@ except Exception as e:
 class MovieInput(BaseModel):
     title: str
     budget: float
-    runtime: int
+    runtime: int = 0
     popularity: float = 1.0
     vote_average: float = 5.0
     vote_count: int = 100
@@ -361,7 +361,7 @@ async def get_validation_report():
                 movie_input = MovieInput(
                     title=str(row['title']),
                     budget=float(row['budget']),
-                    runtime=int(row['runtime']),
+                    runtime=int(row.get('runtime', 0)),
                     popularity=float(row['popularity']),
                     vote_average=float(row['vote_average']),
                     vote_count=int(row['vote_count']),
@@ -415,17 +415,14 @@ async def get_validation_report():
             except Exception as row_e:
                  continue
             
-        # Sort by Revenue
+        # Sort by Revenue (descending) — return ALL movies
         results = sorted(results, key=lambda x: x['actual_revenue'], reverse=True)
         total_count = len(results)
         
-        # Take Top 100
-        top_results = results[:100]
-        
-        logger.info(f"Generated validation report: {len(top_results)}/{total_count} entries.")
+        logger.info(f"Generated validation report: {total_count} entries.")
         return {
             "total_count": total_count,
-            "results": top_results
+            "results": results
         }
 
     except Exception as e:
@@ -448,29 +445,54 @@ def predict(movie: MovieInput):
     if nlp_stats:
         logger.info(f"NLP Analysis: {nlp_stats['sentiment_label']} ({nlp_stats['sentiment_score']:.2f}). Keywords: {nlp_stats['keywords']}")
         
-        # NLP-based Feature Boosting for "Inception 2" cases (Smart Detection)
         keywords = " ".join(nlp_stats['keywords']).lower()
         description = movie.overview.lower()
         
-        # Known Blockbuster Directors/IPs
+        # ── BOOST: Known blockbuster IPs / directors ─────────────────────────
         big_names = ["christopher nolan", "spielberg", "cameron", "avengers", "marvel", "star wars", "batman", "joker", "inception"]
-        
         for name in big_names:
             if name in keywords or name in description:
                 logger.info(f"Detected Big Name/IP: '{name}'. Boosting Director/Cast stats.")
-                
-                # Boost Director Popularity if low
                 if movie.max_director_popularity < 40.0:
-                    movie.max_director_popularity = 50.0 # Force max
+                    movie.max_director_popularity = 50.0
                     movie.avg_director_popularity = 40.0
-                    
-                # Boost Popularity (hype)
                 if movie.popularity < 100.0:
                     movie.popularity = 200.0
-    
-        # Use sentiment to potentially adjust features
-        if nlp_stats['sentiment_score'] > 0.3 and movie.youtube_sentiment == 5.0:
-             movie.youtube_sentiment = 7.5
+
+        # ── PENALTY: Negative NLP sentiment drives the sentiment slider down ──
+        # If NLP detects negative tone and the user left the slider at neutral
+        # (5–9 range), override it below 3 so calculate_revenue applies the
+        # built-in 0.9x penalty.
+        sentiment_score = nlp_stats['sentiment_score']
+        if sentiment_score < -0.05 and 5.0 <= movie.youtube_sentiment <= 9.0:
+            movie.youtube_sentiment = 2.5
+            logger.info(f"NLP negative sentiment ({sentiment_score:.2f}) → slider forced to 2.5 → revenue penalty applied")
+        elif sentiment_score > 0.3 and movie.youtube_sentiment == 5.0:
+            movie.youtube_sentiment = 7.5
+
+        # ── PENALTY: Bad-production keyword detector ──────────────────────────
+        bad_production_phrases = [
+            "script rewritten during filming", "rewritten during filming",
+            "no narrative experience", "director known only for music videos",
+            "music video director", "messy story", "no emotional payoff",
+            "confusing motivations", "overuse of cgi", "no consistent tone",
+            "bad director", "bad crew", "bad casting", "bad cast",
+            "plotlines jump randomly", "jumps randomly", "random plotlines",
+            "villains appear and disappear", "no motive", "without motive",
+            "giant cgi explosion", "generic trailer music", "loud generic",
+            "poorly written", "terrible script", "terrible director",
+            "cash grab", "straight to dvd", "direct to video",
+            "incoherent plot", "no character development",
+        ]
+        bad_production_hits = [p for p in bad_production_phrases if p in description]
+        if bad_production_hits:
+            # Scale penalty: each signal knocks down by 12%, capped at 55% total
+            penalty = max(0.45, 1.0 - len(bad_production_hits) * 0.12)
+            logger.info(f"Bad-production signals detected ({len(bad_production_hits)}): {bad_production_hits[:3]}. Penalty multiplier: {penalty:.2f}x")
+            # Store penalty to apply AFTER calculate_revenue
+            movie.__dict__['_bad_production_penalty'] = penalty
+        else:
+            movie.__dict__['_bad_production_penalty'] = 1.0
     
     if len(movie.overview) > 20: 
         cast_stats = lookup.get_cast_popularity(movie.overview) 
@@ -487,6 +509,12 @@ def predict(movie: MovieInput):
 
     # USE SHARED PREDICTION LOGIC
     revenue_pred = calculate_revenue(movie, reg_model)
+
+    # Apply bad-production penalty (set by NLP keyword detector above)
+    bad_penalty = getattr(movie, '__dict__', {}).get('_bad_production_penalty', 1.0)
+    if bad_penalty < 1.0:
+        logger.info(f"Applying bad-production penalty: {bad_penalty:.2f}x → ${revenue_pred/1e6:.1f}M → ${revenue_pred*bad_penalty/1e6:.1f}M")
+        revenue_pred *= bad_penalty
     
     # --- SPECIFIC OVERRIDES FOR DEMO/TESTING ---
     # If the user is testing "Inception 2" with low budget, we should still catch it.
@@ -537,6 +565,118 @@ def predict(movie: MovieInput):
             "nlp_analysis": nlp_stats if 'nlp_stats' in locals() else None
         }
     }
+
+@app.get("/movies", response_class=HTMLResponse)
+async def read_movies(request: Request):
+    return templates.TemplateResponse("movies.html", {"request": request})
+
+@app.get("/api/movies")
+async def get_movies(q: str = "", sort: str = "revenue", page: int = 1, limit: int = 50):
+    """Return all movies with optional search and sort."""
+    try:
+        df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
+        df = df.fillna(0)
+
+        cols = ['title', 'primary_genre', 'revenue', 'budget', 'youtube_sentiment',
+                'release_month', 'popularity', 'vote_average', 'vote_count',
+                'star_power_score', 'is_franchise', 'is_sequel', 'hype_score']
+        available_cols = [c for c in cols if c in df.columns]
+        df = df[available_cols].copy()
+
+        # Search filter
+        if q:
+            q_lower = q.lower()
+            mask = df['title'].str.lower().str.contains(q_lower, na=False)
+            if 'primary_genre' in df.columns:
+                mask = mask | df['primary_genre'].str.lower().str.contains(q_lower, na=False)
+            df = df[mask]
+
+        # Sort
+        sort_col_map = {
+            'revenue': 'revenue', 'budget': 'budget',
+            'sentiment': 'youtube_sentiment', 'popularity': 'popularity',
+            'vote': 'vote_average'
+        }
+        sort_col = sort_col_map.get(sort, 'revenue')
+        if sort_col in df.columns:
+            df = df.sort_values(sort_col, ascending=False)
+
+        total = len(df)
+        offset = (page - 1) * limit
+        page_df = df.iloc[offset:offset + limit]
+
+        return {
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "movies": page_df.to_dict(orient="records")
+        }
+    except Exception as e:
+        logger.error(f"Movies endpoint error: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/charts/data")
+async def get_charts_data():
+    """Return pre-aggregated data for all dashboard charts."""
+    try:
+        import numpy as np
+        df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
+        df = df.fillna(0)
+
+        result = {}
+
+        # 1. Revenue by Genre
+        if 'primary_genre' in df.columns and 'revenue' in df.columns:
+            genre_rev = df[df['revenue'] > 0].groupby('primary_genre')['revenue'].mean().sort_values(ascending=False).head(10)
+            result['revenue_by_genre'] = {
+                'genres': genre_rev.index.tolist(),
+                'avg_revenues': [round(v / 1e6, 1) for v in genre_rev.values.tolist()]
+            }
+
+        # 2. Budget vs Revenue scatter (sample 200 for performance)
+        if 'budget' in df.columns and 'revenue' in df.columns:
+            scatter_df = df[(df['budget'] > 1000) & (df['revenue'] > 1000)][['title', 'budget', 'revenue', 'primary_genre']].copy()
+            scatter_df = scatter_df.sample(min(200, len(scatter_df)), random_state=42)
+            result['budget_vs_revenue'] = scatter_df.to_dict(orient='records')
+
+        # 3. Monthly release distribution
+        if 'release_month' in df.columns:
+            month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            month_counts = df.groupby('release_month').size()
+            result['monthly_distribution'] = {
+                'months': [month_names[int(m) - 1] for m in month_counts.index.tolist()],
+                'counts': month_counts.values.tolist()
+            }
+
+        # 4. Sentiment distribution (histogram buckets)
+        if 'youtube_sentiment' in df.columns:
+            sent_vals = df['youtube_sentiment'].dropna()
+            hist, bin_edges = np.histogram(sent_vals, bins=15)
+            result['sentiment_distribution'] = {
+                'bin_centers': [round((bin_edges[i] + bin_edges[i+1]) / 2, 2) for i in range(len(hist))],
+                'counts': hist.tolist()
+            }
+
+        # 5. Success class breakdown
+        if 'revenue' in df.columns and 'budget' in df.columns:
+            def classify(row):
+                if row['budget'] <= 0: return 'Unknown'
+                roi = row['revenue'] / row['budget']
+                if row['revenue'] > 500e6: return 'Blockbuster'
+                elif roi >= 3.0: return 'Hit'
+                elif roi >= 1.0: return 'Average'
+                else: return 'Flop'
+            df['success_class'] = df.apply(classify, axis=1)
+            class_counts = df['success_class'].value_counts()
+            result['success_distribution'] = {
+                'labels': class_counts.index.tolist(),
+                'values': class_counts.values.tolist()
+            }
+
+        return result
+    except Exception as e:
+        logger.error(f"Charts data error: {e}")
+        return {"error": str(e)}
 
 @app.get("/")
 def health_check():

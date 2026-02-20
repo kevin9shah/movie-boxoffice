@@ -5,12 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Movie Analytics Dashboard - Spark & AI</title>
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Outlet:wght@300;400;600&family=Inter:wght@400;600&display=swap"
-        rel="stylesheet">
-    <!-- Plotly.js -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
@@ -25,14 +21,16 @@
                 <li><a href="#simulator" class="active">Simulator</a></li>
                 <li><a href="#overview">Overview</a></li>
                 <li><a href="#model-scores">Model Scores</a></li>
+                <li><a href="#charts">Charts</a></li>
                 <li><a href="#spark-data">Feature Impact</a></li>
                 <li><a href="#validation">Validation</a></li>
+                <li><a href="#movie-preview">Browse Movies</a></li>
             </ul>
         </nav>
 
         <main class="main-content">
             <header>
-                <h1>Movie Box Office Prediction & Analytics</h1>
+                <h1>Movie Box Office Prediction &amp; Analytics</h1>
             </header>
 
             <!-- Prediction Simulator Section -->
@@ -80,29 +78,12 @@
                             </div>
                         </div>
 
-                        <!-- Cast & Crew Stats -->
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Avg Cast Pop. (0-100)</label>
-                                <input type="number" id="avg_cast_popularity" value="30" step="0.1">
-                            </div>
-                            <div class="form-group">
-                                <label>Director Pop. (0-50)</label>
-                                <input type="number" id="avg_director_popularity" value="10" step="0.1">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Cast Size</label>
-                                <input type="number" id="num_cast_members" value="10">
-                            </div>
-                            <div class="form-group">
-                                <label>Composers</label>
-                                <input type="number" id="num_composers" value="1">
-                            </div>
-                        </div>
+                        <!-- Cast & Crew: auto-extracted from description -->
+                        <p style="font-size:0.82rem;color:#94a3b8;margin:4px 0 12px;">
+                            🎬 Cast, director &amp; crew stats are extracted automatically from your description.
+                        </p>
 
-                        <!-- Advanced/Social Stats (Simplified for demo) -->
+                        <!-- Sentiment -->
                         <div class="form-group">
                             <label>Projected Sentiment (0-15)</label>
                             <input type="range" id="youtube_sentiment" min="0" max="15" step="0.1" value="7">
@@ -150,6 +131,7 @@
                 </div>
             </section>
 
+            <!-- Overview KPI Section -->
             <section id="overview" class="stats-grid">
                 <div class="card stat-card">
                     <h3>Total Movies Analyzed</h3>
@@ -203,6 +185,44 @@
                 </div>
             </section>
 
+            <!-- Charts Section -->
+            <section id="charts">
+                <div class="section-header">
+                    <h2 class="section-title">Data Analytics Charts</h2>
+                </div>
+                <div class="charts-two-col">
+                    <div class="card">
+                        <h3>Avg Revenue by Genre</h3>
+                        <div id="chart-genre-revenue" class="chart-container"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Budget vs Revenue</h3>
+                        <div id="chart-budget-revenue" class="chart-container"></div>
+                    </div>
+                </div>
+                <div class="charts-two-col">
+                    <div class="card">
+                        <h3>Monthly Release Distribution</h3>
+                        <div id="chart-monthly" class="chart-container"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Success Class Breakdown</h3>
+                        <div id="chart-success" class="chart-container"></div>
+                    </div>
+                </div>
+                <div class="charts-two-col">
+                    <div class="card">
+                        <h3>Prediction Accuracy — Actual vs Predicted Revenue</h3>
+                        <div id="chart-actual-vs-predicted" class="chart-container"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Prediction Error Distribution (%)</h3>
+                        <div id="chart-error-dist" class="chart-container"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Feature Importance -->
             <section id="spark-data" class="charts-grid">
                 <div class="card wide">
                     <h3>Feature Importance (Impact on Revenue)</h3>
@@ -210,9 +230,10 @@
                 </div>
             </section>
 
+            <!-- Validation Table -->
             <section id="validation">
                 <div class="card wide">
-                    <h3>Model Validation (Top 100 of <span id="validation-total">0</span> Movies)</h3>
+                    <h3>Model Validation — All <span id="validation-total">0</span> Movies</h3>
                     <div class="table-container">
                         <table>
                             <thead>
@@ -228,6 +249,20 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </section>
+
+            <!-- Movie Preview Section -->
+            <section id="movie-preview">
+                <div class="section-header-row">
+                    <h2 class="section-title">Browse Movies</h2>
+                    <a href="/movies" class="see-all-btn">See All Movies →</a>
+                </div>
+                <div class="movie-preview-grid" id="movie-preview-grid">
+                    <!-- Populated by JS -->
+                </div>
+                <div style="text-align: center; margin-top: 1.5rem;">
+                    <a href="/movies" class="btn-see-all">View All 674 Movies &amp; Search →</a>
                 </div>
             </section>
 
