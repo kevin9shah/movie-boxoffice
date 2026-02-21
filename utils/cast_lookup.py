@@ -61,6 +61,8 @@ class CastLookup:
         # Pattern 1: "Name – Role" or "Name - Role" (bullet points often used)
         # e.g. "Leonardo DiCaprio – returns as Dom Cobb"
         # We look for lines starting with a Name followed by a dash/hyphen
+        name_pattern = r'(?:[A-Z][a-z]+|[A-Z]\.)'
+        full_name_pattern = rf'({name_pattern}(?:\s{name_pattern}){{1,3}})'
         lines = text.split('\n')
         for line in lines:
             line = line.strip()
@@ -69,7 +71,7 @@ class CastLookup:
             
             # Check for "Name - Role" pattern
             # Assuming names are 2-3 words, capitalized
-            match = re.match(r'^([A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2})\s*[-–—]', line)
+            match = re.match(rf'^{full_name_pattern}\s*[-–—]', line)
             if match:
                 names.add(match.group(1))
                 continue
@@ -84,7 +86,7 @@ class CastLookup:
                 for name in potential_names:
                     name = name.strip()
                     # Basic validation: 2-3 words, distinct casing
-                    if re.match(r'^[A-Z][a-z]+(?:\s[A-Z][a-z]+){1,2}$', name):
+                    if re.match(rf'^{full_name_pattern}$', name):
                         names.add(name)
                         
         return list(names)

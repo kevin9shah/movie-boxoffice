@@ -15,7 +15,14 @@ logger = logging.getLogger(__name__)
 class MongoStore:
     def __init__(self):
         try:
-            self.client = pymongo.MongoClient(config.MONGO_URI)
+            self.client = pymongo.MongoClient(
+                config.MONGO_URI,
+                serverSelectionTimeoutMS=1500,
+                connectTimeoutMS=1500,
+                socketTimeoutMS=1500,
+            )
+            # Fail fast if Mongo is unavailable.
+            self.client.admin.command("ping")
             self.db = self.client[config.DB_NAME]
             logger.info(f"Connected to MongoDB: {config.DB_NAME}")
         except Exception as e:
@@ -25,7 +32,7 @@ class MongoStore:
 
     def insert_raw_data(self, collection_name, data):
         """Insert raw data into a specific collection."""
-        if not self.db:
+        if self.db is None:
             return
             
         collection = self.db[collection_name]
@@ -41,7 +48,7 @@ class MongoStore:
 
     def save_predictions(self, title, revenue_pred, success_class, confidence=None):
         """Save prediction results."""
-        if not self.db:
+        if self.db is None:
             return
             
         collection = self.db["predictions"]

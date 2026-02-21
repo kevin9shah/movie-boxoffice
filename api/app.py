@@ -80,7 +80,9 @@ HIGH_QUALITY_CUES = [
     "earned payoff", "original concept", "fresh premise", "inventive set pieces",
     "excellent pacing", "confident direction", "critically acclaimed", "award-winning",
     "festival favorite", "strong word of mouth", "high rewatch value", "well-reviewed",
-    "cinematic craftsmanship", "memorable score", "standout cinematography"
+    "cinematic craftsmanship", "memorable score", "standout cinematography",
+    "theatrical event", "global appeal", "franchise potential", "repeat-watch value",
+    "practical action set pieces", "powerful orchestral score"
 ]
 
 
@@ -174,6 +176,18 @@ def _build_scores_from_final_report(df):
 
 def _clamp(v, lo, hi):
     return max(lo, min(hi, float(v)))
+
+def _social_clip(v, default, lo, hi):
+    try:
+        x = float(v)
+    except Exception:
+        x = default
+    if not np.isfinite(x):
+        x = default
+    x = _clamp(x, lo, hi)
+    if x <= lo:
+        return default
+    return x
 
 
 def _extract_release_year(value):
@@ -588,15 +602,45 @@ def calculate_revenue(movie: MovieInput, model) -> float:
             revenue_pred *= 0.9
             
         # Cast/Crew quality adjustment (bounded).
-        if movie.avg_cast_popularity > 30.0 or movie.max_director_popularity > 35.0:
+        cast_signal_available = (
+            movie.num_cast_members > 0 or
+            movie.avg_cast_popularity > 0 or
+            movie.max_cast_popularity > 0 or
+            movie.max_director_popularity > 0
+        )
+
+        if movie.avg_cast_popularity > 15.0 or movie.max_director_popularity > 20.0:
             revenue_pred *= 1.06
             logger.info("Cast/Crew Boost: 1.06x")
-        elif movie.avg_cast_popularity < 8.0 and movie.max_director_popularity < 8.0:
+        elif (
+            cast_signal_available and movie.num_cast_members >= 2 and
+            movie.avg_cast_popularity < 8.0 and movie.max_director_popularity < 8.0
+        ):
             revenue_pred *= 0.88
             logger.info("Cast/Crew Penalty: 0.88x")
 
+        # Tentpole/event film adjustment for high-budget theatrical projects.
+        desc = (movie.overview or "").lower()
+        event_cues = [
+            "theatrical event", "global appeal", "franchise potential",
+            "large-scale action", "practical action set pieces", "orchestral score"
+        ]
+        genre_lower = (movie.primary_genre or "").lower()
+        is_tentpole = movie.budget >= 180_000_000 and genre_lower in {"action", "science fiction", "adventure"}
+        if is_tentpole:
+            cue_hits = sum(1 for cue in event_cues if cue in desc)
+            if cue_hits >= 2:
+                tentpole_boost = min(1.35, 1.10 + (0.06 * cue_hits))
+                if movie.max_director_popularity >= 10.0 or movie.avg_cast_popularity >= 8.0:
+                    tentpole_boost = min(1.50, tentpole_boost + 0.12)
+                revenue_pred *= tentpole_boost
+                logger.info(f"Tentpole Boost: {tentpole_boost:.2f}x")
+
         # Soft Negative for obscure high-budget movies
-        if movie.vote_count < 500 and movie.popularity < 5.0 and movie.budget > 50000000:
+        if (
+            movie.vote_count < 500 and movie.popularity < 5.0 and movie.budget > 50000000 and
+            (movie.vote_count > 150 or movie.popularity > 1.5)
+        ):
             revenue_pred *= 0.85
             logger.info("Soft Negative: Low visibility high-budget movie")
     
@@ -870,9 +914,9 @@ def predict(movie: MovieInput):
     from utils.nlp_analyzer import NLPAnalyzer
     nlp = NLPAnalyzer()
     social = _infer_social_signals_from_similar_movie(movie.title, movie.overview, movie.primary_genre)
-    movie.youtube_sentiment = float(social["youtube_sentiment"])
-    movie.sentiment_volatility = float(social["sentiment_volatility"])
-    movie.trend_momentum = float(social["trend_momentum"])
+    movie.youtube_sentiment = _social_clip(social["youtube_sentiment"], 5.0, 0.0, 15.0)
+    movie.sentiment_volatility = _social_clip(social["sentiment_volatility"], 0.1, 0.0, 1.0)
+    movie.trend_momentum = _social_clip(social["trend_momentum"], 0.0, -1.0, 1.0)
     logger.info(
         f"Social signals inferred from training data: "
         f"sent={movie.youtube_sentiment:.2f}, vol={movie.sentiment_volatility:.2f}, "
@@ -897,13 +941,17 @@ def predict(movie: MovieInput):
         cast_stats = lookup.get_cast_popularity(movie.overview) 
         if cast_stats:
             logger.info(f"Dynamic Cast Lookup found: {cast_stats['found_names']}")
-            # Blend lookup with provided values; avoid aggressive multiplier inflation.
-            if cast_stats['avg_cast_popularity'] > movie.avg_cast_popularity:
-                movie.avg_cast_popularity = (movie.avg_cast_popularity * 0.6) + (cast_stats['avg_cast_popularity'] * 0.4)
+            # Use data-source values directly when user did not provide cast inputs.
+            if movie.avg_cast_popularity <= 0:
+                movie.avg_cast_popularity = cast_stats['avg_cast_popularity']
+            elif cast_stats['avg_cast_popularity'] > movie.avg_cast_popularity:
+                movie.avg_cast_popularity = (movie.avg_cast_popularity * 0.4) + (cast_stats['avg_cast_popularity'] * 0.6)
             if cast_stats['max_cast_popularity'] > movie.max_cast_popularity:
                  movie.max_cast_popularity = max(movie.max_cast_popularity, cast_stats['max_cast_popularity'])
-            if cast_stats['star_power_score'] > movie.star_power_score:
-                movie.star_power_score = (movie.star_power_score * 0.7) + (cast_stats['star_power_score'] * 0.3)
+            if movie.star_power_score <= 0:
+                movie.star_power_score = cast_stats['star_power_score']
+            elif cast_stats['star_power_score'] > movie.star_power_score:
+                movie.star_power_score = (movie.star_power_score * 0.4) + (cast_stats['star_power_score'] * 0.6)
             if movie.num_cast_members <= 1:
                 movie.num_cast_members = cast_stats['num_cast_members']
             _sanitize_cast_crew_scores(movie)
@@ -912,6 +960,12 @@ def predict(movie: MovieInput):
     rep = _dynamic_reputation_from_sources(lookup, movie.overview)
     if rep is not None:
         factor = rep["factor"]
+        if movie.avg_director_popularity <= 0 and rep["avg_popularity"] > 0:
+            movie.avg_director_popularity = rep["avg_popularity"]
+        if movie.max_director_popularity <= 0 and rep["max_popularity"] > 0:
+            movie.max_director_popularity = rep["max_popularity"]
+        if movie.director_experience_score <= 0 and rep["avg_popularity"] > 0:
+            movie.director_experience_score = rep["avg_popularity"]
         movie.avg_director_popularity *= factor
         movie.max_director_popularity *= factor
         movie.director_experience_score *= factor
@@ -950,11 +1004,16 @@ def predict(movie: MovieInput):
     # Determine Success Class
     if movie.budget > 0:
         roi = revenue_pred / movie.budget
-        if low_quality_hits >= 3 and roi >= 3.0:
+        very_hit_roi = 5.0 if movie.budget < 200_000_000 else 3.0
+        hit_roi = 3.0 if movie.budget < 200_000_000 else 2.2
+
+        if low_quality_hits >= 3 and roi >= hit_roi:
             success_class = "Average"
         elif low_quality_hits >= 5 and roi >= 1.0:
             success_class = "Flop"
-        elif roi >= 3.0:
+        elif roi >= very_hit_roi:
+            success_class = "Very Hit"
+        elif roi >= hit_roi or (movie.budget >= 200_000_000 and revenue_pred >= 700_000_000 and low_quality_hits < 2):
             success_class = "Hit"
         elif roi >= 1.0:
             success_class = "Average"
