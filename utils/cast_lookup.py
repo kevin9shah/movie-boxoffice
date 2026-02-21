@@ -14,6 +14,7 @@ class CastLookup:
     def __init__(self):
         self.api_key = config.TMDB_API_KEY
         self.base_url = "https://api.themoviedb.org/3"
+        self.person_cache = {}
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json;charset=utf-8"
@@ -23,6 +24,8 @@ class CastLookup:
         """Search for a person by name on TMDB and return their details."""
         if not self.api_key:
             return None
+        if name in self.person_cache:
+            return self.person_cache[name]
             
         url = f"{self.base_url}/search/person"
         params = {
@@ -40,10 +43,12 @@ class CastLookup:
                 if results:
                     # Return the most popular result
                     best_match = max(results, key=lambda x: x.get('popularity', 0))
+                    self.person_cache[name] = best_match
                     return best_match
         except Exception as e:
             logger.warning(f"Error searching for person '{name}': {e}")
             
+        self.person_cache[name] = None
         return None
 
     def extract_names_from_text(self, text):

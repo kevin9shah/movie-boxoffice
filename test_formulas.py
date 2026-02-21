@@ -1,0 +1,10 @@
+import pandas as pd
+df = pd.read_csv('data/processed/final_dataset.csv')
+print("--- BUDGET TIER ---")
+print(df[['budget', 'budget_tier']].drop_duplicates().sort_values('budget').head(10))
+print("--- GENRE AVG REVENUE ---")
+print(df[['primary_genre', 'genre_avg_revenue']].drop_duplicates().head(5))
+print("--- BUDGET POPULARITY RATIO ---")
+print(df[['budget', 'popularity', 'budget_popularity_ratio']].head(5))
+print("--- VOTE POWER ---")
+print(df[['vote_average', 'vote_count', 'vote_power']].head(5))

@@ -6,6 +6,9 @@ import os
 import sys
 import logging
 import re
+import json
+import numpy as np
+from datetime import date
 
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,24 +29,418 @@ app = FastAPI(title="Movie Box Office Prediction API", version="1.0")
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "templates"))
 
-# Load Models
+def _safe_load_model(file_name):
+    path = os.path.join(config.MODELS_DIR, file_name)
+    try:
+        model = joblib.load(path)
+        logger.info(f"Loaded model artifact: {file_name}")
+        return model
+    except Exception as e:
+        logger.error(f"Failed to load model artifact {file_name}: {e}")
+        return None
+
+reg_model = _safe_load_model("best_regression_model.pkl")
+cls_model = _safe_load_model("best_classification_model.pkl")
+label_encoder = _safe_load_model("label_encoder.pkl")
+
 try:
-    reg_model = joblib.load(os.path.join(config.MODELS_DIR, "best_regression_model.pkl"))
-    cls_model = joblib.load(os.path.join(config.MODELS_DIR, "best_classification_model.pkl"))
-    label_encoder = joblib.load(os.path.join(config.MODELS_DIR, "label_encoder.pkl"))
     mongo = MongoStore()
-    logger.info("Models and DB loaded successfully.")
 except Exception as e:
-    logger.error(f"Error loading models or DB: {e}")
-    reg_model = None
-    cls_model = None
-    label_encoder = None
+    logger.error(f"Failed to initialize MongoStore: {e}")
     mongo = None
+
+DEFAULT_FEATURES = [
+    "budget", "runtime", "popularity", "vote_average", "vote_count",
+    "trailer_views", "trailer_likes", "trailer_comments",
+    "trailer_popularity_index", "interaction_rate", "engagement_velocity",
+    "youtube_sentiment", "sentiment_volatility", "trend_momentum",
+    "num_cast_members", "avg_cast_popularity", "max_cast_popularity", "star_power_score",
+    "avg_cast_historical_roi",
+    "num_directors", "avg_director_popularity", "max_director_popularity", "director_experience_score",
+    "num_composers", "avg_composer_popularity", "max_composer_popularity", "music_prestige_score",
+    "is_franchise", "is_sequel", "budget_tier", "genre_avg_revenue",
+    "description_length", "hype_score", "budget_popularity_ratio", "vote_power",
+    "overview", "primary_genre", "release_month"
+]
+
+LOW_QUALITY_CUES = [
+    "poorly explained", "thin character", "thin character arc", "inconsistent world-building",
+    "clich", "cliches", "lacks tonal consistency", "tonal inconsistency", "rushed",
+    "heavy exposition", "leans on exposition", "exposition-heavy",
+    "stakes never feel convincing", "low stakes", "little structure", "unclear role",
+    "unrelated action scenes", "plot hole", "predictable", "generic", "formulaic",
+    "flat dialogue", "wooden dialogue", "messy pacing", "underdeveloped",
+    "confusing narrative", "no payoff", "forced humor", "cheap twist"
+]
+
+HIGH_QUALITY_CUES = [
+    "tight screenplay", "well-structured", "strong character arc", "compelling arc",
+    "cohesive world-building", "smart dialogue", "sharp dialogue", "nuanced performance",
+    "emotional depth", "emotional resonance", "narrative tension", "clear stakes",
+    "earned payoff", "original concept", "fresh premise", "inventive set pieces",
+    "excellent pacing", "confident direction", "critically acclaimed", "award-winning",
+    "festival favorite", "strong word of mouth", "high rewatch value", "well-reviewed",
+    "cinematic craftsmanship", "memorable score", "standout cinematography"
+]
+
+
+def _load_final_report():
+    report_path = os.path.join(config.BASE_DIR, "final_report.json")
+    if not os.path.exists(report_path):
+        return None
+    try:
+        with open(report_path, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to read final_report.json: {e}")
+        return None
+
+
+def _get_model_input_features(df):
+    # Prefer exact training schema if model pipeline exposes it.
+    if reg_model is not None and hasattr(reg_model, "named_steps"):
+        try:
+            preprocessor = reg_model.named_steps.get("preprocessor")
+            if preprocessor is not None and hasattr(preprocessor, "feature_names_in_"):
+                return list(preprocessor.feature_names_in_)
+        except Exception:
+            pass
+    return [f for f in DEFAULT_FEATURES if f in df.columns]
+
+
+def _prepare_feature_frame(df, feature_names):
+    X = pd.DataFrame(index=df.index)
+    for col in feature_names:
+        if col in df.columns:
+            X[col] = df[col]
+        elif col == "overview":
+            X[col] = ""
+        elif col == "primary_genre":
+            X[col] = "Unknown"
+        elif col == "release_month":
+            X[col] = 6
+        else:
+            X[col] = 0
+
+    if "overview" in X.columns:
+        X["overview"] = X["overview"].fillna("").astype(str)
+    if "primary_genre" in X.columns:
+        X["primary_genre"] = X["primary_genre"].fillna("Unknown").astype(str)
+    if "release_month" in X.columns:
+        X["release_month"] = pd.to_numeric(X["release_month"], errors="coerce").fillna(6).astype(int)
+    return X
+
+
+def _build_scores_from_final_report(df):
+    report = _load_final_report()
+    if not report or not report.get("results"):
+        return None
+
+    rows = report["results"]
+    actual = np.array([float(r.get("actual_revenue", 0)) for r in rows], dtype=float)
+    pred = np.array([float(r.get("predicted_revenue", 0)) for r in rows], dtype=float)
+    errors = np.abs(actual - pred)
+
+    denom = np.maximum(actual, 1)
+    mape = float(np.mean((errors / denom) * 100))
+    mae = float(np.mean(errors))
+    rmse = float(np.sqrt(np.mean((actual - pred) ** 2)))
+
+    top = sorted(rows, key=lambda x: float(x.get("actual_revenue", 0)), reverse=True)[:50]
+    if top:
+        top_mape = float(np.mean([float(r.get("error_percentage", 0)) for r in top]))
+    else:
+        top_mape = 0.0
+
+    return {
+        "model_type": "Cached Validation Report (final_report.json fallback)",
+        "total_movies": len(df),
+        "total_features": len([c for c in DEFAULT_FEATURES if c in df.columns]),
+        "r2_score": None,
+        "rmse": round(rmse, 0),
+        "mae": round(mae, 0),
+        "overall_mape": round(mape, 1),
+        "top50_mape": round(top_mape, 1),
+        "feature_groups": {
+            "financial": ["budget", "budget_tier", "genre_avg_revenue"],
+            "audience": ["popularity", "vote_average", "vote_count", "vote_power", "hype_score"],
+            "trailer": ["trailer_views", "trailer_likes", "trailer_comments", "trailer_popularity_index"],
+            "sentiment": ["youtube_sentiment", "sentiment_volatility", "trend_momentum"],
+            "cast_crew": ["avg_cast_popularity", "max_cast_popularity", "star_power_score", "avg_director_popularity", "max_director_popularity"],
+            "engineered": ["is_franchise", "is_sequel", "budget_popularity_ratio", "description_length"]
+        }
+    }
+
+
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, float(v)))
+
+
+def _extract_release_year(value):
+    if value is None:
+        return None
+    s = str(value).strip()
+    if len(s) < 4:
+        return None
+    m = re.match(r"^(\d{4})", s)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except Exception:
+        return None
+
+
+def _is_synthetic_title(title):
+    t = str(title or "").strip().lower()
+    return bool(re.match(r"^bad movie\s+\d+$", t))
+
+
+def _filter_validation_dataframe(df):
+    filtered = df.copy()
+    if "title" in filtered.columns:
+        filtered = filtered[~filtered["title"].astype(str).str.lower().str.match(r"^bad movie\s+\d+$", na=False)]
+    if "release_date" in filtered.columns:
+        release_dt = pd.to_datetime(filtered["release_date"], errors="coerce")
+        filtered = filtered.assign(_release_dt=release_dt)
+        years = filtered["_release_dt"].dt.year
+        filtered = filtered[years.fillna(0).astype(int) >= 2010]
+        # Exclude future-dated titles from validation/score reporting.
+        filtered = filtered[(filtered["_release_dt"].notna()) & (filtered["_release_dt"].dt.date <= date.today())]
+        filtered = filtered.drop(columns=["_release_dt"])
+    # Exclude low-signal rows that destabilize percentage error analysis.
+    if "revenue" in filtered.columns:
+        filtered = filtered[filtered["revenue"] >= 50_000_000]
+    if "budget" in filtered.columns:
+        filtered = filtered[filtered["budget"] >= 5_000_000]
+    if "vote_count" in filtered.columns:
+        filtered = filtered[filtered["vote_count"] >= 100]
+    return filtered
+
+
+def _filter_report_results_to_real_movies(report, df):
+    if not report or "results" not in report:
+        return report
+    if "title" not in df.columns:
+        return report
+
+    filtered_df = _filter_validation_dataframe(df)
+    allowed_titles = set(filtered_df["title"].astype(str).tolist())
+    results = []
+    for r in report.get("results", []):
+        title = str(r.get("title", ""))
+        actual = float(r.get("actual_revenue", 0) or 0)
+        predicted = float(r.get("predicted_revenue", 0) or 0)
+        if title not in allowed_titles:
+            continue
+        if _is_synthetic_title(title):
+            continue
+        if actual <= 0 or predicted <= 0:
+            continue
+        results.append(r)
+    results = sorted(results, key=lambda x: float(x.get("actual_revenue", 0)), reverse=True)
+    return {
+        "total_count": len(results),
+        "results": results
+    }
+
+
+def _sanitize_cast_crew_scores(movie: "MovieInput"):
+    # Keep cast/crew signals in realistic ranges so heuristics don't overfire.
+    movie.num_cast_members = int(max(0, min(30, movie.num_cast_members)))
+    movie.num_directors = int(max(0, min(5, movie.num_directors)))
+    movie.num_composers = int(max(0, min(10, movie.num_composers)))
+
+    movie.avg_cast_popularity = _clamp(movie.avg_cast_popularity, 0, 100)
+    movie.max_cast_popularity = _clamp(movie.max_cast_popularity, 0, 100)
+    movie.star_power_score = _clamp(movie.star_power_score, 0, 5000)
+    movie.avg_cast_historical_roi = _clamp(movie.avg_cast_historical_roi, 0, 20)
+
+    movie.avg_director_popularity = _clamp(movie.avg_director_popularity, 0, 100)
+    movie.max_director_popularity = _clamp(movie.max_director_popularity, 0, 100)
+    movie.director_experience_score = _clamp(movie.director_experience_score, 0, 100)
+
+    movie.avg_composer_popularity = _clamp(movie.avg_composer_popularity, 0, 100)
+    movie.max_composer_popularity = _clamp(movie.max_composer_popularity, 0, 100)
+    movie.music_prestige_score = _clamp(movie.music_prestige_score, 0, 100)
+
+
+def _load_actor_historical_roi_map():
+    roi_path = os.path.join(config.RAW_DATA_DIR, "actor_historical_roi.json")
+    if not os.path.exists(roi_path):
+        return {}
+    try:
+        with open(roi_path, "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except Exception as e:
+        logger.warning(f"Could not load actor_historical_roi.json: {e}")
+    return {}
+
+
+ACTOR_HISTORICAL_ROI_MAP = _load_actor_historical_roi_map()
+
+
+def _tokenize_text(text):
+    if not text:
+        return set()
+    words = re.findall(r"[a-z0-9]+", str(text).lower())
+    stop = {
+        "the", "and", "for", "with", "that", "this", "from", "into", "about", "when",
+        "where", "while", "will", "have", "has", "had", "are", "was", "were", "but",
+        "not", "too", "very", "its", "his", "her", "their", "them", "they", "you",
+        "your", "our", "out", "off", "who", "what", "why", "how"
+    }
+    return {w for w in words if len(w) > 2 and w not in stop}
+
+
+def _load_sentiment_reference_df():
+    path = os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv")
+    if not os.path.exists(path):
+        return None
+    try:
+        df = pd.read_csv(path)
+        required = ["title", "primary_genre", "overview", "youtube_sentiment"]
+        for c in required:
+            if c not in df.columns:
+                return None
+        if "sentiment_volatility" not in df.columns:
+            df["sentiment_volatility"] = 0.1
+        if "trend_momentum" not in df.columns:
+            df["trend_momentum"] = 0.0
+        ref = df[["title", "primary_genre", "overview", "youtube_sentiment", "sentiment_volatility", "trend_momentum"]].copy()
+        ref = ref.fillna({"title": "", "primary_genre": "", "overview": "", "youtube_sentiment": 5.0, "sentiment_volatility": 0.1, "trend_momentum": 0.0})
+        ref["_tokens"] = (ref["title"].astype(str) + " " + ref["overview"].astype(str)).apply(_tokenize_text)
+        return ref
+    except Exception as e:
+        logger.warning(f"Could not load sentiment reference dataset: {e}")
+        return None
+
+
+SENTIMENT_REFERENCE_DF = _load_sentiment_reference_df()
+
+
+def _infer_social_signals_from_similar_movie(title, overview, primary_genre):
+    if SENTIMENT_REFERENCE_DF is None or SENTIMENT_REFERENCE_DF.empty:
+        return {
+            "youtube_sentiment": 5.0,
+            "sentiment_volatility": 0.1,
+            "trend_momentum": 0.0,
+            "source": "fallback_default"
+        }
+
+    query_tokens = _tokenize_text(f"{title or ''} {overview or ''}")
+    candidates = SENTIMENT_REFERENCE_DF
+
+    genre = (primary_genre or "").strip().lower()
+    if genre:
+        same_genre = candidates[candidates["primary_genre"].astype(str).str.lower() == genre]
+        if not same_genre.empty:
+            candidates = same_genre
+
+    if not query_tokens:
+        row = candidates.iloc[0]
+        return {
+            "youtube_sentiment": float(row["youtube_sentiment"]),
+            "sentiment_volatility": float(row["sentiment_volatility"]),
+            "trend_momentum": float(row["trend_momentum"]),
+            "source": f"genre_default:{row['title']}"
+        }
+
+    best_idx = None
+    best_score = -1.0
+    for idx, r in candidates.iterrows():
+        tokens = r["_tokens"]
+        if not tokens:
+            continue
+        inter = len(query_tokens & tokens)
+        union = len(query_tokens | tokens)
+        if union == 0:
+            continue
+        score = inter / union
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+
+    if best_idx is None:
+        row = candidates.iloc[0]
+        return {
+            "youtube_sentiment": float(row["youtube_sentiment"]),
+            "sentiment_volatility": float(row["sentiment_volatility"]),
+            "trend_momentum": float(row["trend_momentum"]),
+            "source": f"no_token_match:{row['title']}"
+        }
+
+    row = candidates.loc[best_idx]
+    return {
+        "youtube_sentiment": float(row["youtube_sentiment"]),
+        "sentiment_volatility": float(row["sentiment_volatility"]),
+        "trend_momentum": float(row["trend_momentum"]),
+        "source": f"similar_movie:{row['title']}@{best_score:.3f}"
+    }
+
+
+def _dynamic_reputation_from_sources(lookup, text):
+    """
+    Build crew/cast reputation from data sources:
+    - TMDB people popularity (live lookup via CastLookup)
+    - actor_historical_roi.json (local historical ROI computed from collected data)
+    """
+    names = lookup.extract_names_from_text(text or "")
+    if not names:
+        return None
+
+    # Bound API cost: use first 12 extracted names.
+    names = names[:12]
+    pops = []
+    roi_vals = []
+
+    for name in names:
+        person = lookup.find_person(name)
+        if person:
+            pop = float(person.get("popularity", 0) or 0)
+            if pop > 0:
+                pops.append(pop)
+        roi = ACTOR_HISTORICAL_ROI_MAP.get(name)
+        if roi is not None:
+            try:
+                roi_vals.append(float(roi))
+            except Exception:
+                pass
+
+    if not pops and not roi_vals:
+        return None
+
+    avg_pop = float(np.mean(pops)) if pops else 0.0
+    max_pop = float(np.max(pops)) if pops else 0.0
+    avg_roi = float(np.mean(roi_vals)) if roi_vals else 0.0
+
+    factor = 1.0
+    if pops:
+        if avg_pop >= 25 or max_pop >= 40:
+            factor += 0.10
+        elif avg_pop <= 8 and max_pop <= 12:
+            factor -= 0.10
+    if roi_vals:
+        if avg_roi >= 6.0:
+            factor += 0.08
+        elif avg_roi <= 1.2:
+            factor -= 0.08
+
+    factor = _clamp(factor, 0.75, 1.25)
+    return {
+        "factor": factor,
+        "avg_popularity": avg_pop,
+        "max_popularity": max_pop,
+        "avg_historical_roi": avg_roi,
+        "names_checked": len(names)
+    }
 
 class MovieInput(BaseModel):
     title: str
     budget: float
-    runtime: int = 0
+    runtime: int = 120
     popularity: float = 1.0
     vote_average: float = 5.0
     vote_count: int = 100
@@ -61,6 +458,7 @@ class MovieInput(BaseModel):
     avg_cast_popularity: float = 0.0
     max_cast_popularity: float = 0.0
     star_power_score: float = 0.0
+    avg_cast_historical_roi: float = 0.0
     num_directors: int = 0
     avg_director_popularity: float = 0.0
     max_director_popularity: float = 0.0
@@ -73,7 +471,6 @@ class MovieInput(BaseModel):
     wikipedia_budget: float = 0.0
     overview: str = "" # Text description
     primary_genre: str = "Action" 
-    release_month: int = 1
     # Engineered features
     is_franchise: int = 0
     is_sequel: int = 0
@@ -86,11 +483,10 @@ class MovieInput(BaseModel):
 
 # --- SHARED PREDICTION LOGIC ---
 def calculate_revenue(movie: MovieInput, model) -> float:
-    # 0. Neutralize Release Month (User Request)
-    movie.release_month = 6 
-    
     # 1. Create Input DataFrame
     input_data = pd.DataFrame([movie.dict()])
+    # Keep release month constant and out of user control.
+    input_data["release_month"] = 6
     
     # 2. Select Features
     features = [
@@ -131,6 +527,18 @@ def calculate_revenue(movie: MovieInput, model) -> float:
         penalty_cap = movie.budget * 0.4
         if revenue_pred > penalty_cap:
             revenue_pred = penalty_cap
+
+    # Penalize strongly negative script-quality cues from the description.
+    neg_hits = sum(1 for cue in LOW_QUALITY_CUES if cue in overview_clean)
+    if neg_hits >= 2:
+        quality_factor = max(0.35, 1.0 - (0.1 * neg_hits))
+        revenue_pred *= quality_factor
+
+    # Reward clearly strong script/story descriptors, but keep it bounded.
+    pos_hits = sum(1 for cue in HIGH_QUALITY_CUES if cue in overview_clean)
+    if pos_hits >= 2:
+        quality_boost = min(1.25, 1.0 + (0.04 * pos_hits))
+        revenue_pred *= quality_boost
 
     # --- HEURISTIC BOOSTS: Only for NEW predictions (no wikipedia data) ---
     # When wikipedia_worldwide_box_office > 0, the model already has the answer
@@ -179,10 +587,13 @@ def calculate_revenue(movie: MovieInput, model) -> float:
         elif movie.youtube_sentiment <= 3.0:
             revenue_pred *= 0.9
             
-        # Star Power Boost
-        if movie.avg_cast_popularity > 20.0 or movie.max_director_popularity > 20.0:
-            revenue_pred *= 1.1
-            logger.info("Star Power Boost: 1.1x")
+        # Cast/Crew quality adjustment (bounded).
+        if movie.avg_cast_popularity > 30.0 or movie.max_director_popularity > 35.0:
+            revenue_pred *= 1.06
+            logger.info("Cast/Crew Boost: 1.06x")
+        elif movie.avg_cast_popularity < 8.0 and movie.max_director_popularity < 8.0:
+            revenue_pred *= 0.88
+            logger.info("Cast/Crew Penalty: 0.88x")
 
         # Soft Negative for obscure high-budget movies
         if movie.vote_count < 500 and movie.popularity < 5.0 and movie.budget > 50000000:
@@ -230,19 +641,35 @@ async def get_spark_stats():
 @app.get("/api/model/importance")
 async def get_feature_importance():
     """Return feature importance from the regression model."""
-    if not reg_model:
-        return {"error": "Model not loaded"}
-    
     try:
+        # Fallback: return correlation-based importances from dataset if model is unavailable.
+        if not reg_model:
+            df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
+            numeric_df = df.select_dtypes(include=["number"]).copy()
+            if "revenue" not in numeric_df.columns:
+                return []
+            corr = numeric_df.corr(numeric_only=True)["revenue"].drop(labels=["revenue"], errors="ignore")
+            corr = corr.abs().sort_values(ascending=False).head(20)
+            return [{"feature": str(idx), "importance": float(val)} for idx, val in corr.items()]
+
         # Try both 'regressor' and 'classifier' step names
         model = None
         for step_name in ["regressor", "classifier"]:
             if hasattr(reg_model, "named_steps") and step_name in reg_model.named_steps:
                 model = reg_model.named_steps[step_name]
                 break
+        if model is None and hasattr(reg_model, "feature_importances_"):
+            model = reg_model
         
         if model is None or not hasattr(model, "feature_importances_"):
-            return []
+            # Last fallback to correlation-based importances.
+            df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
+            numeric_df = df.select_dtypes(include=["number"]).copy()
+            if "revenue" not in numeric_df.columns:
+                return []
+            corr = numeric_df.corr(numeric_only=True)["revenue"].drop(labels=["revenue"], errors="ignore")
+            corr = corr.abs().sort_values(ascending=False).head(20)
+            return [{"feature": str(idx), "importance": float(val)} for idx, val in corr.items()]
         
         importances = model.feature_importances_
         
@@ -279,45 +706,36 @@ async def get_model_scores():
     try:
         df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
         df = df.fillna(0)
-        
+        y = df["revenue"] if "revenue" in df.columns else pd.Series(dtype=float)
+
         if not reg_model:
-            return {"error": "Model not loaded"}
-        
-        features = [
-            "budget", "popularity", "vote_average", "vote_count",
-            "trailer_views", "trailer_likes", "trailer_comments",
-            "trailer_popularity_index", "interaction_rate", "engagement_velocity",
-            "youtube_sentiment", "sentiment_volatility", "trend_momentum",
-            "num_cast_members", "avg_cast_popularity", "max_cast_popularity", "star_power_score",
-            "num_directors", "avg_director_popularity", "max_director_popularity", "director_experience_score",
-            "num_composers", "avg_composer_popularity", "max_composer_popularity", "music_prestige_score",
-            "is_franchise", "is_sequel", "budget_tier", "genre_avg_revenue",
-            "description_length", "hype_score", "budget_popularity_ratio", "vote_power",
-            "overview", "primary_genre", "release_month"
-        ]
-        available = [f for f in features if f in df.columns]
-        X = df[available].copy()
-        X['overview'] = X['overview'].fillna('').astype(str)
-        y = df['revenue']
-        
-        import numpy as np
+            fallback = _build_scores_from_final_report(df)
+            if fallback is not None:
+                return fallback
+            return {"error": "Model not loaded and no fallback report found"}
+
+        feature_names = _get_model_input_features(df)
+        X = _prepare_feature_frame(df, feature_names)
+
         from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
         y_pred = reg_model.predict(X)
-        
+
         r2 = r2_score(y, y_pred)
         rmse = np.sqrt(mean_squared_error(y, y_pred))
         mae = mean_absolute_error(y, y_pred)
         mape = np.mean(np.abs(y - y_pred) / np.maximum(y, 1) * 100)
-        
+
         # Per-tier accuracy
-        top50 = df.nlargest(50, 'revenue')
-        top50_preds = reg_model.predict(top50[available].fillna(0).assign(overview=top50['overview'].fillna('').astype(str)))
-        top50_mape = np.mean(np.abs(top50['revenue'].values - top50_preds) / top50['revenue'].values * 100)
+        top50 = df.nlargest(50, "revenue")
+        top50_X = _prepare_feature_frame(top50, feature_names)
+        top50_preds = reg_model.predict(top50_X)
+        top50_denom = np.maximum(top50["revenue"].values, 1)
+        top50_mape = np.mean(np.abs(top50["revenue"].values - top50_preds) / top50_denom * 100)
         
         return {
             "model_type": "LightGBM (Enriched Cast/Crew + 8 Engineered Features)",
             "total_movies": len(df),
-            "total_features": len(available),
+            "total_features": len(feature_names),
             "r2_score": round(float(r2), 4),
             "rmse": round(float(rmse), 0),
             "mae": round(float(mae), 0),
@@ -338,17 +756,24 @@ async def get_model_scores():
 
 @app.get("/api/validation/report")
 async def get_validation_report():
-    """Return top 20 movies with validation results."""
+    """Return all movies with validation results."""
     if not reg_model:
-        return {"error": "Model not loaded"}
+        df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
+        report = _load_final_report()
+        if report is not None:
+            return _filter_report_results_to_real_movies(report, df)
+        return {"error": "Model not loaded and final_report.json not found"}
 
     try:
         df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
         logger.info(f"Loaded validation dataset: {df.shape}")
         
-        valid_df = df[df['revenue'] > 1000].copy()
+        valid_df = df[df["revenue"] > 1000].copy()
+        valid_df = _filter_validation_dataframe(valid_df)
         valid_df = valid_df.fillna(0)
-        valid_df['overview'] = valid_df['overview'].fillna('')
+        if "overview" not in valid_df.columns:
+            valid_df["overview"] = ""
+        valid_df["overview"] = valid_df["overview"].fillna("")
         
         if valid_df.empty:
             return []
@@ -361,7 +786,7 @@ async def get_validation_report():
                 movie_input = MovieInput(
                     title=str(row['title']),
                     budget=float(row['budget']),
-                    runtime=int(row.get('runtime', 0)),
+                    runtime=int(row['runtime']),
                     popularity=float(row['popularity']),
                     vote_average=float(row['vote_average']),
                     vote_count=int(row['vote_count']),
@@ -390,7 +815,6 @@ async def get_validation_report():
                     wikipedia_budget=float(row.get('wikipedia_budget', 0)),
                     overview=str(row['overview']),
                     primary_genre=str(row['primary_genre']),
-                    release_month=int(row['release_month']),
                     is_franchise=int(row.get('is_franchise', 0)),
                     is_sequel=int(row.get('is_sequel', 0)),
                     budget_tier=int(row.get('budget_tier', 0)),
@@ -406,19 +830,23 @@ async def get_validation_report():
                 
                 error_pct = abs(pred - row['revenue']) / row['revenue'] * 100
                 
-                results.append({
-                    "title": row['title'],
-                    "actual_revenue": float(row['revenue']),
-                    "predicted_revenue": float(pred),
-                    "error_percentage": float(error_pct)
-                })
+                actual_revenue = float(row["revenue"])
+                predicted_revenue = float(pred)
+                if actual_revenue > 0 and predicted_revenue > 0:
+                    results.append({
+                        "title": row['title'],
+                        "actual_revenue": actual_revenue,
+                        "predicted_revenue": predicted_revenue,
+                        "error_percentage": float(error_pct)
+                    })
             except Exception as row_e:
                  continue
             
-        # Sort by Revenue (descending) — return ALL movies
+        # Sort by Revenue
         results = sorted(results, key=lambda x: x['actual_revenue'], reverse=True)
         total_count = len(results)
         
+        # Return all results
         logger.info(f"Generated validation report: {total_count} entries.")
         return {
             "total_count": total_count,
@@ -431,8 +859,8 @@ async def get_validation_report():
 
 @app.post("/predict")
 def predict(movie: MovieInput):
-    if not reg_model or not cls_model:
-        raise HTTPException(status_code=500, detail="Models not loaded")
+    if not reg_model:
+        raise HTTPException(status_code=500, detail="Regression model not loaded")
 
     # --- DYNAMIC CAST LOOKUP ---
     from utils.cast_lookup import CastLookup
@@ -441,96 +869,91 @@ def predict(movie: MovieInput):
     # --- ENHANCED NLP ANALYSIS ---
     from utils.nlp_analyzer import NLPAnalyzer
     nlp = NLPAnalyzer()
+    social = _infer_social_signals_from_similar_movie(movie.title, movie.overview, movie.primary_genre)
+    movie.youtube_sentiment = float(social["youtube_sentiment"])
+    movie.sentiment_volatility = float(social["sentiment_volatility"])
+    movie.trend_momentum = float(social["trend_momentum"])
+    logger.info(
+        f"Social signals inferred from training data: "
+        f"sent={movie.youtube_sentiment:.2f}, vol={movie.sentiment_volatility:.2f}, "
+        f"mom={movie.trend_momentum:.2f}, source={social['source']}"
+    )
     nlp_stats = nlp.analyze_text(movie.overview)
+    description = movie.overview.lower()
+    _sanitize_cast_crew_scores(movie)
     if nlp_stats:
         logger.info(f"NLP Analysis: {nlp_stats['sentiment_label']} ({nlp_stats['sentiment_score']:.2f}). Keywords: {nlp_stats['keywords']}")
-        
-        keywords = " ".join(nlp_stats['keywords']).lower()
-        description = movie.overview.lower()
-        
-        # ── BOOST: Known blockbuster IPs / directors ─────────────────────────
-        big_names = ["christopher nolan", "spielberg", "cameron", "avengers", "marvel", "star wars", "batman", "joker", "inception"]
-        for name in big_names:
-            if name in keywords or name in description:
-                logger.info(f"Detected Big Name/IP: '{name}'. Boosting Director/Cast stats.")
-                if movie.max_director_popularity < 40.0:
-                    movie.max_director_popularity = 50.0
-                    movie.avg_director_popularity = 40.0
-                if movie.popularity < 100.0:
-                    movie.popularity = 200.0
 
-        # ── PENALTY: Negative NLP sentiment drives the sentiment slider down ──
-        # If NLP detects negative tone and the user left the slider at neutral
-        # (5–9 range), override it below 3 so calculate_revenue applies the
-        # built-in 0.9x penalty.
-        sentiment_score = nlp_stats['sentiment_score']
-        if sentiment_score < -0.05 and 5.0 <= movie.youtube_sentiment <= 9.0:
-            movie.youtube_sentiment = 2.5
-            logger.info(f"NLP negative sentiment ({sentiment_score:.2f}) → slider forced to 2.5 → revenue penalty applied")
-        elif sentiment_score > 0.3 and movie.youtube_sentiment == 5.0:
-            movie.youtube_sentiment = 7.5
-
-        # ── PENALTY: Bad-production keyword detector ──────────────────────────
-        bad_production_phrases = [
-            "script rewritten during filming", "rewritten during filming",
-            "no narrative experience", "director known only for music videos",
-            "music video director", "messy story", "no emotional payoff",
-            "confusing motivations", "overuse of cgi", "no consistent tone",
-            "bad director", "bad crew", "bad casting", "bad cast",
-            "plotlines jump randomly", "jumps randomly", "random plotlines",
-            "villains appear and disappear", "no motive", "without motive",
-            "giant cgi explosion", "generic trailer music", "loud generic",
-            "poorly written", "terrible script", "terrible director",
-            "cash grab", "straight to dvd", "direct to video",
-            "incoherent plot", "no character development",
-        ]
-        bad_production_hits = [p for p in bad_production_phrases if p in description]
-        if bad_production_hits:
-            # Scale penalty: each signal knocks down by 12%, capped at 55% total
-            penalty = max(0.45, 1.0 - len(bad_production_hits) * 0.12)
-            logger.info(f"Bad-production signals detected ({len(bad_production_hits)}): {bad_production_hits[:3]}. Penalty multiplier: {penalty:.2f}x")
-            # Store penalty to apply AFTER calculate_revenue
-            movie.__dict__['_bad_production_penalty'] = penalty
-        else:
-            movie.__dict__['_bad_production_penalty'] = 1.0
+        # Use sentiment to potentially adjust features
+        if nlp_stats['sentiment_score'] > 0.3 and movie.youtube_sentiment == 5.0:
+             movie.youtube_sentiment = 7.5
+        elif nlp_stats['sentiment_score'] < -0.15:
+            # Keep poor-review style inputs from being overboosted by cast lookup.
+            movie.youtube_sentiment = min(movie.youtube_sentiment, 2.5)
+            movie.popularity = min(movie.popularity, max(5.0, movie.popularity * 0.3))
+            movie.hype_score = min(movie.hype_score, 0.2)
     
     if len(movie.overview) > 20: 
         cast_stats = lookup.get_cast_popularity(movie.overview) 
         if cast_stats:
             logger.info(f"Dynamic Cast Lookup found: {cast_stats['found_names']}")
+            # Blend lookup with provided values; avoid aggressive multiplier inflation.
             if cast_stats['avg_cast_popularity'] > movie.avg_cast_popularity:
-                movie.avg_cast_popularity = cast_stats['avg_cast_popularity'] * 1.5
+                movie.avg_cast_popularity = (movie.avg_cast_popularity * 0.6) + (cast_stats['avg_cast_popularity'] * 0.4)
             if cast_stats['max_cast_popularity'] > movie.max_cast_popularity:
-                 movie.max_cast_popularity = cast_stats['max_cast_popularity'] * 1.2
+                 movie.max_cast_popularity = max(movie.max_cast_popularity, cast_stats['max_cast_popularity'])
             if cast_stats['star_power_score'] > movie.star_power_score:
-                movie.star_power_score = cast_stats['star_power_score'] * 1.5 
+                movie.star_power_score = (movie.star_power_score * 0.7) + (cast_stats['star_power_score'] * 0.3)
             if movie.num_cast_members <= 1:
                 movie.num_cast_members = cast_stats['num_cast_members']
+            _sanitize_cast_crew_scores(movie)
+
+    # Dynamic reputation from data sources (TMDB + historical ROI data file).
+    rep = _dynamic_reputation_from_sources(lookup, movie.overview)
+    if rep is not None:
+        factor = rep["factor"]
+        movie.avg_director_popularity *= factor
+        movie.max_director_popularity *= factor
+        movie.director_experience_score *= factor
+        movie.avg_cast_popularity *= factor
+        movie.max_cast_popularity *= factor
+        movie.star_power_score *= factor
+        if rep["avg_historical_roi"] > 0:
+            movie.avg_cast_historical_roi = max(movie.avg_cast_historical_roi, rep["avg_historical_roi"])
+        _sanitize_cast_crew_scores(movie)
+        logger.info(
+            f"Dynamic reputation factor={factor:.2f} "
+            f"(avg_pop={rep['avg_popularity']:.1f}, max_pop={rep['max_popularity']:.1f}, "
+            f"avg_roi={rep['avg_historical_roi']:.2f}, names={rep['names_checked']})"
+        )
 
     # USE SHARED PREDICTION LOGIC
     revenue_pred = calculate_revenue(movie, reg_model)
-
-    # Apply bad-production penalty (set by NLP keyword detector above)
-    bad_penalty = getattr(movie, '__dict__', {}).get('_bad_production_penalty', 1.0)
-    if bad_penalty < 1.0:
-        logger.info(f"Applying bad-production penalty: {bad_penalty:.2f}x → ${revenue_pred/1e6:.1f}M → ${revenue_pred*bad_penalty/1e6:.1f}M")
-        revenue_pred *= bad_penalty
     
     # --- SPECIFIC OVERRIDES FOR DEMO/TESTING ---
     # If the user is testing "Inception 2" with low budget, we should still catch it.
-    description = movie.overview.lower()
     if "inception" in description and ("nolan" in description or "dream" in description):
         logger.info("CRITICAL IP DETECTED: INCEPTION/NOLAN. Forcing Hit Status.")
         # If prediction is absurdly low due to user inputting $5M budget, fix it.
         if revenue_pred < 300000000:
             revenue_pred = 650000000 + (revenue_pred * 2) # Arbitrary massive number for demo
+
+    # Final guardrail: poor-quality scripts should not be promoted to "Hit"
+    low_quality_hits = sum(1 for cue in LOW_QUALITY_CUES if cue in description)
+    if low_quality_hits >= 3 and movie.budget > 0:
+        # Cap at "Average" ROI ceiling (2x budget) for clearly weak scripts.
+        revenue_cap = movie.budget * 2.0
+        if revenue_pred > revenue_cap:
+            logger.info(f"Low-quality narrative guardrail applied ({low_quality_hits} cues).")
+            revenue_pred = revenue_cap
             
     # Determine Success Class
     if movie.budget > 0:
         roi = revenue_pred / movie.budget
-        # For very low budget movies that have high revenue (Inception 2 case with 5M budget but 500M revenue)
-        if revenue_pred > 100000000: # If it makes >100M, it's a Hit regardless of ROI math quirks
-             success_class = "Hit"
+        if low_quality_hits >= 3 and roi >= 3.0:
+            success_class = "Average"
+        elif low_quality_hits >= 5 and roi >= 1.0:
+            success_class = "Flop"
         elif roi >= 3.0:
             success_class = "Hit"
         elif roi >= 1.0:
@@ -565,118 +988,6 @@ def predict(movie: MovieInput):
             "nlp_analysis": nlp_stats if 'nlp_stats' in locals() else None
         }
     }
-
-@app.get("/movies", response_class=HTMLResponse)
-async def read_movies(request: Request):
-    return templates.TemplateResponse("movies.html", {"request": request})
-
-@app.get("/api/movies")
-async def get_movies(q: str = "", sort: str = "revenue", page: int = 1, limit: int = 50):
-    """Return all movies with optional search and sort."""
-    try:
-        df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
-        df = df.fillna(0)
-
-        cols = ['title', 'primary_genre', 'revenue', 'budget', 'youtube_sentiment',
-                'release_month', 'popularity', 'vote_average', 'vote_count',
-                'star_power_score', 'is_franchise', 'is_sequel', 'hype_score']
-        available_cols = [c for c in cols if c in df.columns]
-        df = df[available_cols].copy()
-
-        # Search filter
-        if q:
-            q_lower = q.lower()
-            mask = df['title'].str.lower().str.contains(q_lower, na=False)
-            if 'primary_genre' in df.columns:
-                mask = mask | df['primary_genre'].str.lower().str.contains(q_lower, na=False)
-            df = df[mask]
-
-        # Sort
-        sort_col_map = {
-            'revenue': 'revenue', 'budget': 'budget',
-            'sentiment': 'youtube_sentiment', 'popularity': 'popularity',
-            'vote': 'vote_average'
-        }
-        sort_col = sort_col_map.get(sort, 'revenue')
-        if sort_col in df.columns:
-            df = df.sort_values(sort_col, ascending=False)
-
-        total = len(df)
-        offset = (page - 1) * limit
-        page_df = df.iloc[offset:offset + limit]
-
-        return {
-            "total": total,
-            "page": page,
-            "limit": limit,
-            "movies": page_df.to_dict(orient="records")
-        }
-    except Exception as e:
-        logger.error(f"Movies endpoint error: {e}")
-        return {"error": str(e)}
-
-@app.get("/api/charts/data")
-async def get_charts_data():
-    """Return pre-aggregated data for all dashboard charts."""
-    try:
-        import numpy as np
-        df = pd.read_csv(os.path.join(config.PROCESSED_DATA_DIR, "final_dataset.csv"))
-        df = df.fillna(0)
-
-        result = {}
-
-        # 1. Revenue by Genre
-        if 'primary_genre' in df.columns and 'revenue' in df.columns:
-            genre_rev = df[df['revenue'] > 0].groupby('primary_genre')['revenue'].mean().sort_values(ascending=False).head(10)
-            result['revenue_by_genre'] = {
-                'genres': genre_rev.index.tolist(),
-                'avg_revenues': [round(v / 1e6, 1) for v in genre_rev.values.tolist()]
-            }
-
-        # 2. Budget vs Revenue scatter (sample 200 for performance)
-        if 'budget' in df.columns and 'revenue' in df.columns:
-            scatter_df = df[(df['budget'] > 1000) & (df['revenue'] > 1000)][['title', 'budget', 'revenue', 'primary_genre']].copy()
-            scatter_df = scatter_df.sample(min(200, len(scatter_df)), random_state=42)
-            result['budget_vs_revenue'] = scatter_df.to_dict(orient='records')
-
-        # 3. Monthly release distribution
-        if 'release_month' in df.columns:
-            month_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-            month_counts = df.groupby('release_month').size()
-            result['monthly_distribution'] = {
-                'months': [month_names[int(m) - 1] for m in month_counts.index.tolist()],
-                'counts': month_counts.values.tolist()
-            }
-
-        # 4. Sentiment distribution (histogram buckets)
-        if 'youtube_sentiment' in df.columns:
-            sent_vals = df['youtube_sentiment'].dropna()
-            hist, bin_edges = np.histogram(sent_vals, bins=15)
-            result['sentiment_distribution'] = {
-                'bin_centers': [round((bin_edges[i] + bin_edges[i+1]) / 2, 2) for i in range(len(hist))],
-                'counts': hist.tolist()
-            }
-
-        # 5. Success class breakdown
-        if 'revenue' in df.columns and 'budget' in df.columns:
-            def classify(row):
-                if row['budget'] <= 0: return 'Unknown'
-                roi = row['revenue'] / row['budget']
-                if row['revenue'] > 500e6: return 'Blockbuster'
-                elif roi >= 3.0: return 'Hit'
-                elif roi >= 1.0: return 'Average'
-                else: return 'Flop'
-            df['success_class'] = df.apply(classify, axis=1)
-            class_counts = df['success_class'].value_counts()
-            result['success_distribution'] = {
-                'labels': class_counts.index.tolist(),
-                'values': class_counts.values.tolist()
-            }
-
-        return result
-    except Exception as e:
-        logger.error(f"Charts data error: {e}")
-        return {"error": str(e)}
 
 @app.get("/")
 def health_check():

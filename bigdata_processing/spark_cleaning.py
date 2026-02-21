@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, explode, current_timestamp
+from pyspark.sql.functions import col, explode, current_timestamp, when, size
 import os
 import sys
 
@@ -35,7 +35,7 @@ def clean_tmdb_data(spark):
         col("vote_average"),
         col("vote_count"),
         col("release_date"),
-        col("genres")[0]["name"].alias("primary_genre")
+        when(size(col("genres")) > 0, col("genres")[0]["name"]).otherwise("Unknown").alias("primary_genre")
     ).na.fill({
         "budget": 0,
         "revenue": 0,

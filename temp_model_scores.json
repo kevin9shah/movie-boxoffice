@@ -1,0 +1,48 @@
+{
+  "model_type": "LightGBM (Enriched Cast/Crew + 8 Engineered Features)",
+  "total_movies": 656,
+  "total_features": 36,
+  "r2_score": 0.8772,
+  "rmse": 145549894.0,
+  "mae": 69256310.0,
+  "overall_mape": 587695054.5,
+  "top50_mape": 15.1,
+  "feature_groups": {
+    "financial": [
+      "budget",
+      "budget_tier",
+      "genre_avg_revenue"
+    ],
+    "audience": [
+      "popularity",
+      "vote_average",
+      "vote_count",
+      "vote_power",
+      "hype_score"
+    ],
+    "trailer": [
+      "trailer_views",
+      "trailer_likes",
+      "trailer_comments",
+      "trailer_popularity_index"
+    ],
+    "sentiment": [
+      "youtube_sentiment",
+      "sentiment_volatility",
+      "trend_momentum"
+    ],
+    "cast_crew": [
+      "avg_cast_popularity",
+      "max_cast_popularity",
+      "star_power_score",
+      "avg_director_popularity",
+      "max_director_popularity"
+    ],
+    "engineered": [
+      "is_franchise",
+      "is_sequel",
+      "budget_popularity_ratio",
+      "description_length"
+    ]
+  }
+}
